@@ -81,9 +81,9 @@ class Rollout:
         :param terminate: environment terminated
         :param truncate: environment truncated
         """
-        assert native_type(state) == native_type(self.s_batch[0]), \
+        assert native_type(state) == native_type(self.s_batch.flat[0]), \
             f"type(state)={native_type(state)} does not match {native_type(self.s_batch[0])}"
-        assert native_type(action) == native_type(self.a_batch[0]), \
+        assert native_type(action) == native_type(self.a_batch.flat[0]), \
             f"type(action)={native_type(action)} does not match {native_type(self.a_batch[0])}"
         assert native_type(reward) in [int, float], \
             f"type(reward)={native_type(reward)} not numerical"

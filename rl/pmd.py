@@ -10,21 +10,25 @@ import gymnasium as gym
 
 import sklearn.linear_model as sklm
 
-import rl.rollout as rollout
+from rl import Rollout
+from rl.utils import remap_vec_to_int
+from rl.utils import safe_normalize_row
 
-def safe_normalize_row(arr, tol=1e-16):
-    """ 
-    Normalizes rows (in place) so rows sum to 1 then rounds
-    
-    :param tol: cut off smallest value for row sum
-    """
-    assert tol <= 1e-8, f"tol={tol} too large (<= 1e-8)"
-    assert np.min(arr) >= 0, "Given arr with negative value"
-    policy_row_sum = np.atleast_2d(np.sum(arr, axis=1)).T
-    rows_whose_sum_is_almost_zero = np.where(policy_row_sum < tol)
-    arr[rows_whose_sum_is_almost_zero] += tol
-    np.divide(arr, np.atleast_2d(np.sum(arr, axis=1)).T, out=arr)
-    np.round(arr, decimals=10*int(1-np.log(tol)/np.log(10)), out=arr)
+
+def check_space_is_finite(space):
+    """ Check space is finite and returns cardinality """
+    if isinstance(space, gym.spaces.discrete.Discrete):
+        assert hasattr(space, "start")
+        assert hasattr(space, "n")
+        return space.n
+    elif isinstance(space, gym.spaces.box.Box):
+        assert space.dtype == int, "Unsupported box type {space.dtype} (must be int/in64)"
+        assert hasattr(space, "low")
+        assert hasattr(space, "high")
+        assert np.all(space.high-space.low >= 0)
+        return np.prod(space.high-space.low+1)
+    else:
+        raise Exception("Unsupported space {type(space)} for finite spaces")
 
 class PMD(ABC):
     def __init__(self, env, params):
@@ -35,7 +39,7 @@ class PMD(ABC):
         self.check_params()
         self.rng = np.random.default_rng(params.get("seed", None))
 
-        self.rollout = rollout.Rollout(env, params["gamma"])
+        self.rollout = Rollout(env, params["gamma"])
         self.rollout_len = self.params["rollout_len"]
 
         self.initialized_env = False
@@ -136,33 +140,14 @@ class PMD(ABC):
         """
         return a
 
-def help_(space):
-    if isinstance(space, gym.spaces.discrete.Discrete):
-        i_0 = space.start
-        n   = space.n
-        return (i_0, n, gym.spaces.discrete.Discrete)
-    elif isinstance(space, gym.spaces.box.Box):
-        assert space.dtype == int, "Unsupported box type {space.dtype} (must be int/in64)"
-        low  = space.low
-        high = space.high
-    else:
-        raise Exception("Unsupported space {type(space)} for finite spaces")
-
 class PMDFiniteStateAction(PMD):
     def __init__(self, env, params):
         super().__init__(env, params)
-        assert isinstance(env.observation_space, gym.spaces.discrete.Discrete)
-        assert isinstance(env.action_space, gym.spaces.discrete.Discrete)
-        assert hasattr(env.observation_space, "start")
-        assert hasattr(env.observation_space, "n")
-        assert hasattr(env.action_space, "start")
-        assert hasattr(env.action_space, "n")
 
-        self.a_0 = env.action_space.start
-        self.n_actions = env.action_space.n
-
-        self.s_0 = env.observation_space.start
-        self.n_states  = env.observation_space.n
+        self.n_actions = check_space_is_finite(env.action_space)
+        self.n_states  = check_space_is_finite(env.observation_space)
+        self.action_space = env.action_space
+        self.obs_space = env.observation_space
 
         # uniform policy
         self.policy = np.ones((self.n_states, self.n_actions), dtype=float)
@@ -284,13 +269,13 @@ class PMDFiniteStateAction(PMD):
 
     def remap_obs(self, obs): 
         if isinstance(obs, np.ndarray):
-            obs = obs[0]
-        return obs - self.s_0
+            obs = remap_vec_to_int(obs, self.obs_space)
+        return obs
 
-    def remap_action(self, a): 
-        if isinstance(a, np.ndarray):
-            a = a[0]
-        return a - self.a_0
+    def remap_action(self, action): 
+        if isinstance(action, np.ndarray):
+            action = remap_vec_to_int(action, self.action_space)
+        return action
 
 class PMDGeneralStateFiniteAction(PMD):
     def __init__(self, env, params):
