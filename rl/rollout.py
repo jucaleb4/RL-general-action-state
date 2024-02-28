@@ -31,7 +31,7 @@ def add_rows_array(arr):
     assert len(arr.shape) <= 2, "Currently only support at most 2 axes (given {len(arr.shape)})"
     if len(arr.shape) == 1:
         return np.pad(arr, (0, len(arr)))
-    return np.pad(arr, ((0, arr.shape[1]), (0,0)))
+    return np.pad(arr, ((0, arr.shape[0]), (0,0)))
 
 def native_type(x):
     """ Returns native python type. See:
@@ -120,6 +120,9 @@ class Rollout:
         self.iter_ct = 0
         self.reset_iter_ct = 0
 
+    def get_state(self, t):
+        return self.s_batch[t]
+
     def compute_enumerated_stateaction_value(self):
         """ Compute advatange function 
         # TODO: Compute GAE (https://arxiv.org/pdf/1506.02438.pdf)
@@ -145,7 +148,7 @@ class Rollout:
             else:
                 episode_end = self.iter_ct
 
-            # below happens when two consecutive steps are termination/truncates
+            # when two consecutive steps are termination/truncates
             if episode_start+1 >= episode_end:
                 continue
 
