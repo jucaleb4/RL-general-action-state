@@ -12,6 +12,20 @@ import sklearn.linear_model as sklm
 
 import rl.rollout as rollout
 
+def safe_normalize_row(arr, tol=1e-16):
+    """ 
+    Normalizes rows (in place) so rows sum to 1 then rounds
+    
+    :param tol: cut off smallest value for row sum
+    """
+    assert tol <= 1e-8, f"tol={tol} too large (<= 1e-8)"
+    assert np.min(arr) >= 0, "Given arr with negative value"
+    policy_row_sum = np.atleast_2d(np.sum(arr, axis=1)).T
+    rows_whose_sum_is_almost_zero = np.where(policy_row_sum < tol)
+    arr[rows_whose_sum_is_almost_zero] += tol
+    np.divide(arr, np.atleast_2d(np.sum(arr, axis=1)).T, out=arr)
+    np.round(arr, decimals=10*int(1-np.log(tol)/np.log(10)), out=arr)
+
 class PMD(ABC):
     def __init__(self, env, params):
         self.params = params
@@ -34,14 +48,14 @@ class PMD(ABC):
 
             self.collect_rollouts()
 
-            self.train()
+            self.policy_evaluate()
 
             self.policy_update()
 
             mean_perf = self.policy_performance()
-            if mean_perf == 0:
-                import ipdb; ipdb.set_trace()
             print(f"[{self.t}] mean(V)={mean_perf}")
+
+        print(f"Final policy:\n{self.policy}")
 
     def check_params(self):
         if "single_trajectory" not in self.params:
@@ -59,23 +73,23 @@ class PMD(ABC):
             self.initialized_env = True
 
         s = self.remap_obs(self.rollout.get_state(0))
-        a = self.remap_action(self.policy_evaluate(s, eps=0.05))
+        a = self.remap_action(self.policy_sample(s, eps=0.05))
         self.rollout.add_step_data(s, a)
 
         for t in range(self.rollout_len): 
             (s, r, term, trunc, _)  = self.env.step(a)
             s = self.remap_obs(s)
-            a = self.remap_action(self.policy_evaluate(s, eps=0.05))
+            a = self.remap_action(self.policy_sample(s, eps=0.05))
             self.rollout.add_step_data(s, a, r, term, trunc)
 
             if term or trunc:
                 (s, _) = self.env.reset()
                 s = self.remap_obs(s)
-                a = self.remap_action(self.policy_evaluate(s))
+                a = self.remap_action(self.policy_sample(s))
                 self.rollout.add_step_data(s, a)
 
     @abstractmethod
-    def policy_evaluate(self, s):
+    def policy_sample(self, s):
         """ Returns an action uses current policy 
 
         :param s: state/observation we want an action for
@@ -84,20 +98,20 @@ class PMD(ABC):
         return self.env.action_space.sample()
 
     @abstractmethod
-    def train(self):
+    def policy_evaluate(self):
         """ Uses samples to estimate policy value """
         raise NotImplemented
 
     @abstractmethod
     def policy_update(self): 
-        """ Uses policy estimation from `train()` and updates new policy (can
+        """ Uses policy estimation from `policy_evaluate()` and updates new policy (can
             differ depending on policy approximation).
         """
         raise NotImplemented
 
     @abstractmethod
     def policy_performance(self) -> float: 
-        """ Uses policy estimation from `train()` and updates new policy (can
+        """ Uses policy estimation from `policy_evaluate()` and updates new policy (can
             differ depending on policy approximation).
         """
         raise NotImplemented
@@ -105,7 +119,8 @@ class PMD(ABC):
     def get_stepsize_schedule(self):
         # TODO: Make this more robust
         # return self.params["gamma"]**(-self.t)
-        return (self.t+1)**0.5
+        return (self.t)**0.5
+        # return 1
 
     def remap_obs(self, obs): 
         """ 
@@ -120,6 +135,18 @@ class PMD(ABC):
         Same as `remap_obs`
         """
         return a
+
+def help_(space):
+    if isinstance(space, gym.spaces.discrete.Discrete):
+        i_0 = space.start
+        n   = space.n
+        return (i_0, n, gym.spaces.discrete.Discrete)
+    elif isinstance(space, gym.spaces.box.Box):
+        assert space.dtype == int, "Unsupported box type {space.dtype} (must be int/in64)"
+        low  = space.low
+        high = space.high
+    else:
+        raise Exception("Unsupported space {type(space)} for finite spaces")
 
 class PMDFiniteStateAction(PMD):
     def __init__(self, env, params):
@@ -140,10 +167,155 @@ class PMDFiniteStateAction(PMD):
         # uniform policy
         self.policy = np.ones((self.n_states, self.n_actions), dtype=float)
         self.policy /= self.n_actions
+        self.params["dim"] = self.n_states*self.n_actions
 
         self._setup_random_fourier_features(self.n_states*self.n_actions)
 
-    def policy_evaluate(self, s, eps=0.):
+    def policy_sample(self, s, eps=0.):
+        """ Samples random action from current policy 
+
+        TODO: Find mapping from integers to original action (see #1)
+        """
+        assert 0 <= s < self.n_states, f"invalid s={s} ({self.n_states} states)"
+        assert 0 <= eps <= 1
+
+        pi = (1.-eps)*self.policy[s] + eps/self.n_actions
+        return self.rng.choice(self.n_actions, p=pi)
+
+    def policy_evaluate(self):
+        """ Estimates Q function and stores in self.Q_est """
+        if self.params.get("train_method", "mc") == "mc":
+            self.Q_est = self.monte_carlo_Q()
+        elif self.params["train_method"] == "ctd":
+            self.Q_est = self.ctd_Q()
+        elif self.params["train_method"] == "vrftd":
+            self.Q_est = self.vrftd_Q()
+
+    def _setup_random_fourier_features(self, n):
+        """ 
+        Creates random affine transformation via random Fourier features. 
+        If no feature dimsion is passed in, use 100.
+        Link: https://people.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
+        """
+        assert "dim" in self.params, "missing key 'dim' in self.params"
+        if hasattr(self, "W") or hasattr(self, "b"):
+            warnings.warn("Already set 'W' and 'b', now replacing 'W' and 'b'")
+
+        dim = self.params["dim"]
+        self.W = 2**0.5 * self.rng.normal(size=(dim, n))
+        self.b = 2*np.pi*self.rng.random(size=dim)
+
+    def monte_carlo_Q(self):
+        """ 
+        Constructs Q/advantage function by Monte-Carlo. If missing any data
+        points, we use RKHS to fill missing points.
+        """
+        # check if we are missing any points 
+        Q_est, Ind_est = self.rollout.compute_enumerated_stateaction_value()
+
+        assert Q_est.shape == Ind_est.shape
+        assert len(Q_est.shape) == 2
+
+        if self.params.get("verbose", 0) >= 1:
+            print(f"Visited {np.sum(Ind_est)}/{np.prod(np.shape(Ind_est))} sa pairs")
+
+        if not np.all(Ind_est):
+            ind_est = np.reshape(Ind_est, newshape=(-1,))
+            # use visited state-action pairs to fit model
+            # TODO: Why does `take` not work?
+            # X = np.take(np.eye(len(ind_est)), ind_est, axis=0)
+            X = np.eye(len(ind_est))[ind_est]
+            partial_q_est = np.reshape(Q_est, newshape=(-1,))[ind_est]
+            Q_est = self.ridge_regression(X, partial_q_est)
+
+        return Q_est
+
+    def ridge_regression(self, X, y):
+        """ Fit and predicts with ridge regression """
+        N = self.n_actions*self.n_states
+        alpha = self.params.get("alpha", 0.1)
+        sigma = self.params.get("sigma", 1)
+
+        model = sklm.Ridge(alpha=alpha)
+        Z = self.get_rbf_features(X, sigma)
+        model.fit(Z.T, y)
+        Z_all = self.get_rbf_features(np.eye(N), sigma)
+
+        return np.reshape(
+            model.predict(Z_all), 
+            newshape=(self.n_states, self.n_actions)
+        )
+
+    def get_rbf_features(self, X, sigma):
+        """ Construct feature map from X (i-th rows is x_i) 
+        - W is dxn matrix (d is feature dimension, n is input dim)
+        - X is mxn matrix (m is number of input points)
+        """
+        B = np.repeat(self.b[:, np.newaxis], X.shape[0], axis=1)
+        return np.sqrt(2./self.W.shape[0]) * np.cos(sigma * self.W @ X.T + B)
+
+    def ctd_Q(self):
+        raise NotImplemented
+
+    def vrftd_Q(self):
+        raise NotImplemented
+
+    def policy_update(self): 
+        """ Policy update with PMD and KL divergence """
+        eta = self.get_stepsize_schedule()
+        G = np.copy(self.Q_est)
+        G -= np.atleast_2d(np.min(G, axis=1)).T
+        self.policy = np.multiply(self.policy, np.exp(-eta*G))
+
+        safe_normalize_row(self.policy)
+
+        assert not np.any(np.isnan(self.policy)), "inf in policy"
+        assert np.min(self.policy) >= 0, f"min(policy)={np.min(self.policy)}"
+        assert np.allclose(np.sum(self.policy, axis=1), 1.), "rows not sum to 1"
+
+    def policy_performance(self) -> float: 
+        """ Estimate value function """
+        if not hasattr(self, "Q_est"):
+            return 0
+        return np.mean(self.get_value_function())
+
+    def get_value_function(self):
+        return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
+
+    def remap_obs(self, obs): 
+        if isinstance(obs, np.ndarray):
+            obs = obs[0]
+        return obs - self.s_0
+
+    def remap_action(self, a): 
+        if isinstance(a, np.ndarray):
+            a = a[0]
+        return a - self.a_0
+
+class PMDGeneralStateFiniteAction(PMD):
+    def __init__(self, env, params):
+        super().__init__(env, params)
+        assert isinstance(env.observation_space, gym.spaces.discrete.Discrete)
+        assert isinstance(env.action_space, gym.spaces.discrete.Discrete)
+        assert hasattr(env.observation_space, "start")
+        assert hasattr(env.observation_space, "n")
+        assert hasattr(env.action_space, "start")
+        assert hasattr(env.action_space, "n")
+
+        self.a_0 = env.action_space.start
+        self.n_actions = env.action_space.n
+
+        self.s_0 = env.observation_space.start
+        self.n_states  = env.observation_space.n
+
+        # uniform policy
+        self.policy = np.ones((self.n_states, self.n_actions), dtype=float)
+        self.policy /= self.n_actions
+        self.params["dim"] = self.n_states*self.n_actions
+
+        self._setup_random_fourier_features(self.n_states*self.n_actions)
+
+    def policy_sample(self, s, eps=0.):
         """ Samples random action from current policy 
 
         TODO: Find mapping from integers to original action (see #1)
@@ -154,9 +326,14 @@ class PMDFiniteStateAction(PMD):
         pi = (1.-eps)*self.policy[s] + eps/self.n_actions
         return self.rng.choice(self.n_actions, p=pi)
 
-    def train(self):
+    def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """
-        self.Q_est = self.Q_via_monte_carlo()
+        if self.params.get("train_method", "mc") == "mc":
+            self.Q_est = self.monte_carlo_Q()
+        elif self.params["train_method"] == "ctd":
+            self.Q_est = self.ctd_Q()
+        elif self.params["train_method"] == "vrftd":
+            self.Q_est = self.vrftd_Q()
 
     def _setup_random_fourier_features(self, n):
         """ 
@@ -164,15 +341,15 @@ class PMDFiniteStateAction(PMD):
         If no feature dimsion is passed in, use 100.
         Link: https://people.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
         """
+        assert "dim" in self.params, "missing key 'dim' in self.params"
         if hasattr(self, "W") or hasattr(self, "b"):
             warnings.warn("Already set 'W' and 'b', now replacing 'W' and 'b'")
 
-        # no approximation, have one feature go to one state-action pair
-        dim = n
+        dim = self.params["dim"]
         self.W = 2**0.5 * self.rng.normal(size=(dim, n))
         self.b = 2*np.pi*self.rng.random(size=dim)
 
-    def Q_via_monte_carlo(self):
+    def monte_carlo_Q(self):
         """ 
         Constructs Q/advantage function by Monte-Carlo. If missing any data
         points, we use RKHS to fill missing points.
@@ -215,31 +392,24 @@ class PMDFiniteStateAction(PMD):
         B = np.repeat(self.b[:, np.newaxis], X.shape[0], axis=1)
         return np.sqrt(2./self.W.shape[0]) * np.cos(sigma * self.W @ X.T + B)
 
-    def ctd(self):
+    def ctd_Q(self):
         raise NotImplemented
 
-    def ftd(self):
-        raise NotImplemented
-
-    def vrftd(self):
+    def vrftd_Q(self):
         raise NotImplemented
 
     def policy_update(self): 
         """ Policy update with PMD and KL divergence """
-        # TODO: Check for NaNs
-
         eta = self.get_stepsize_schedule()
-        G = eta * self.Q_est 
-
-        # subtract so each row's largest element is 0
+        G = np.copy(self.Q_est)
         G -= np.atleast_2d(np.min(G, axis=1)).T
-        self.policy = np.multiply(self.policy, np.exp(-G))
+        self.policy = np.multiply(self.policy, np.exp(-eta*G))
 
-        # normalize so each row is a simplex
-        self.policy /= np.atleast_2d(np.sum(self.policy, axis=1)).T
+        safe_normalize_row(self.policy)
 
-        assert np.min(self.policy) >= 0, f"negative value in policy ({np.min(self.policy)})"
-        assert np.allclose(np.sum(self.policy, axis=1), 1.), "not all rows sum to 1"
+        assert not np.any(np.isnan(self.policy)), "inf in policy"
+        assert np.min(self.policy) >= 0, f"min(policy)={np.min(self.policy)}"
+        assert np.allclose(np.sum(self.policy, axis=1), 1.), "rows not sum to 1"
 
     def policy_performance(self) -> float: 
         """ Estimate value function """
