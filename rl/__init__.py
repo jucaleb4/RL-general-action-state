@@ -1,2 +1,2 @@
-from rl.pmd import PMD
+from rl.pmd import PMDFiniteStateAction
 from rl.rollout import Rollout
