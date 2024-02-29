@@ -69,7 +69,7 @@ class FiniteStateActionRollout(unittest.TestCase):
 
         self.assertEqual(rollout.iter_ct, 0)
 
-    def test_compute_enumerated_stateaction_value_visit_all(self):
+    def test_compute_all_stateaction_value_visit_all(self):
         """ 
         Visit all state-action pairs and check the Q function is correct.
         This is the order we plan to visit (s,a)
@@ -121,7 +121,7 @@ class FiniteStateActionRollout(unittest.TestCase):
             self.assertEqual(rollout.iter_ct, t+1)
 
         self.assertEqual(rollout.iter_ct, len(action_plan))
-        (Q, Ind) = rollout.compute_enumerated_stateaction_value()
+        (Q, Ind) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_Q.shape)
         self.assertEqual(Ind.shape, correct_Q.shape)
@@ -131,7 +131,7 @@ class FiniteStateActionRollout(unittest.TestCase):
         normalize_const = max(la.norm(correct_Q, ord=np.inf), la.norm(Q, ord=np.inf))
         self.assertLessEqual(la.norm(Q-correct_Q, ord=np.inf)/normalize_const, 1e-16)
 
-    def test_compute_enumerated_stateaction_value_visit_partial(self):
+    def test_compute_all_stateaction_value_visit_partial(self):
         """ Same as test above but we do not have the last two
         steps/state-action values. We now have
 
@@ -174,7 +174,7 @@ class FiniteStateActionRollout(unittest.TestCase):
             self.assertEqual(rollout.iter_ct, t+1)
 
         self.assertEqual(rollout.iter_ct, len(action_plan))
-        (Q, Ind) = rollout.compute_enumerated_stateaction_value()
+        (Q, Ind) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_Q.shape)
         self.assertEqual(Ind.shape, correct_Q.shape)
@@ -187,7 +187,7 @@ class FiniteStateActionRollout(unittest.TestCase):
         normalize_const = max(la.norm(correct_Q, ord=np.inf), la.norm(Q, ord=np.inf))
         self.assertLessEqual(la.norm(Q-correct_Q, ord=np.inf)/normalize_const, 2e-16)
 
-    def test_compute_enumerated_stateaction_value_visit_multiepisode(self):
+    def test_compute_all_stateaction_value_visit_multiepisode(self):
         """ 
         Combines last two tests to see check Rollout can combine multiple
         episodes to correctly estimate the Q function.
@@ -244,7 +244,7 @@ class FiniteStateActionRollout(unittest.TestCase):
                         term = True
                     rollout.add_step_data(s,a,r,term,trunc)
 
-        (Q, Ind) = rollout.compute_enumerated_stateaction_value()
+        (Q, Ind) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_avg_Q.shape)
         self.assertEqual(Ind.shape, correct_avg_Q.shape)

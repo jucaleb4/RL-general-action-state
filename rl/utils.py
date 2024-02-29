@@ -10,11 +10,13 @@ def safe_normalize_row(arr, tol=1e-32):
     
     :param tol: cut off for smallest value for row sum
     """
+    assert len(arr.shape) == 2, f"dim(arr)={len(arr.shape)} != 2"
     assert tol <= 1e-16, f"tol={tol} too large (<= 1e-16)"
     assert np.min(arr) >= 0, "Given arr with negative value"
 
     policy_row_sum = np.atleast_2d(np.sum(arr, axis=1)).T
-    rows_whose_sum_is_near_zero = np.where(policy_row_sum < tol)
+    # TODO: Does this cause any breaks?
+    rows_whose_sum_is_near_zero = np.where(policy_row_sum < tol)[0]
     arr[rows_whose_sum_is_near_zero] += tol
     np.divide(arr, np.atleast_2d(np.sum(arr, axis=1)).T, out=arr)
 
@@ -87,3 +89,19 @@ def pretty_print_gridworld(arr, space):
     for i,a in enumerate(arr):
         print(f"  {int_to_vec(i, space)} : {a}")
     
+def rbf_kernel(n, dim, rng):
+    """ 
+    Creates random affine transformation via random Fourier features. 
+    Link: https://people.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
+    """
+    W = 2**0.5 * rng.normal(size=(dim, n))
+    b = 2*np.pi*rng.random(size=dim)
+    return (W,b)
+
+def get_rbf_features(W, b, X, sigma):
+    """ Construct feature map from X (i-th rows is x_i) 
+    - W is dxn matrix (d is feature dimension, n is input dim)
+    - X is mxn matrix (m is number of input points)
+    """
+    B = np.repeat(b[:, np.newaxis], X.shape[0], axis=1)
+    return np.sqrt(2./W.shape[0]) * np.cos(sigma * W @ X.T + B)

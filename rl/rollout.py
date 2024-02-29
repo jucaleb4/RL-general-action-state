@@ -35,11 +35,21 @@ def native_type(x):
     return type(x)
 
 class Rollout:
-    def __init__(self, env, gamma):
+    def __init__(self, env, gamma, **kwargs):
         assert 0 <= gamma <= 1, f"gamma={gamma} not in [0,1]"
         
-        # discount factor
         self.gamma = gamma 
+
+        # cut-off for Monte-Carlo estimation
+        if "cutoff" not in kwargs:
+            if self.gamma == 1:
+                self.cutoff = 100
+            else:
+                self.cutoff = int(1+1./(1-gamma))
+            warnings.warn(f"No cutoff specified, setting to {self.cutoff}")
+        else:
+            self.cutoff = kwargs["cuttoff"]
+        assert self.cutoff > 0, "Monte-Carlo cutoff {self.cutoff} not positive"
 
         # Process the environment's state and action space
         self.obs_space = env.observation_space
@@ -47,12 +57,16 @@ class Rollout:
         (_, obs_dim, obs_type) = get_space_property(self.obs_space)
         (_, action_dim, action_type) = get_space_property(self.action_space)
 
+        assert len(obs_dim) <= 1, "Only support 1D observation spaces, given {len(obs_dim)}D"
+        assert len(action_dim) <= 1, "Only support 1D action spaces, given {len(action_dim)}D"
+
         # Create arrays to store the batch information (row by row)
         capacity = 32
         self.iter_ct = 0
         self.reset_iter_ct = 1 # first step is a reset step
-        self.s_batch = np.zeros((capacity,) +  obs_dim, dtype=obs_type)  
+        self.s_batch = np.zeros((capacity,) + obs_dim, dtype=obs_type)  
         self.a_batch = np.zeros((capacity,) + action_dim, dtype=action_type)
+
         self.r_batch = np.zeros(capacity, dtype=float)
         self.terminate_batch = np.zeros(capacity, dtype=bool)
         self.truncate_batch = np.zeros(capacity, dtype=bool)
@@ -113,13 +127,18 @@ class Rollout:
     def get_state(self, t):
         return self.s_batch[t]
 
-    def get_batch_rewards(self):
-        batch_rewards = []
-        for t in range(self.iter_ct):
-            # not the first step in episode
-            if t > 0 and (t-1) not in self.reset_steps[:self.reset_iter_ct]:
-                batch_rewards.append(self.r_batch[t])
-        return np.array(batch_rewards)
+    def get_episode_rewards(self):
+        episode_rewards_arr = []
+        for t in range(self.reset_iter_ct):
+            episode_start = self.reset_steps[t]+1
+            episode_end = self.reset_steps[t+1]
+            if episode_start == episode_end:
+                continue
+            rewards = self.r_batch[episode_start:episode_end]
+            weights = np.power(self.gamma, np.arange(len(rewards)))
+            episode_reward = np.dot(weights, rewards)
+            episode_rewards_arr.append(episode_reward)
+        return np.array(episode_rewards_arr)
 
     def get_episode_lens(self):
         """ Gets episode lengths """
@@ -127,7 +146,7 @@ class Rollout:
             return np.array([self.iter_ct-1])
         return np.ediff1d(np.append(self.reset_steps[:self.reset_iter_ct], self.iter_ct-1))-1
 
-    def compute_enumerated_stateaction_value(self):
+    def compute_all_stateaction_value(self):
         """ Compute advatange function 
         # TODO: Compute GAE (https://arxiv.org/pdf/1506.02438.pdf)
 
@@ -143,8 +162,6 @@ class Rollout:
             warnings.warn("Have not run rollout, returning null values..")
             return (Q, total_num_first_visits > 0)
 
-        # import ipdb; ipdb.set_trace()
-        do_print = False
         for i in range(self.reset_iter_ct+1):
             # episode duration = [episode_start, episode_end)
             if i == 0:
@@ -160,6 +177,8 @@ class Rollout:
             if episode_start+1 >= episode_end:
                 continue
 
+            episode_truncated = self.truncate_batch[episode_end-1]
+
             # rewards appear on second step 
             rwds = self.r_batch[episode_start+1:episode_end]
             weight_factors = np.power(self.gamma, np.arange(len(rwds)))
@@ -171,13 +190,16 @@ class Rollout:
             
             visited_this_episode = np.zeros(total_num_first_visits.shape, dtype=int)
             for dt in range(episode_end-episode_start-1):
-                s_ = self.s_batch[dt+t_0]
-                a_ = self.a_batch[dt+t_0]
-                if do_print:
-                    print(s_, a_)
+                t = t_0+dt
+
+                # trajectory too short to estimate Monte-Carlo estimate well
+                if episode_truncated and t+self.cutoff>episode_end:
+                    break
+
+                s_ = self.s_batch[t]
+                a_ = self.a_batch[t]
                 s = vec_to_int(s_, self.obs_space)
                 a = vec_to_int(a_, self.action_space)
-
                 if visited_this_episode[s,a] == 0:
                     visited_this_episode[s,a] = 1
                     num_visits = total_num_first_visits[s,a]
@@ -189,3 +211,60 @@ class Rollout:
 
         Ind = total_num_first_visits > 0
         return (Q, Ind)
+
+    def visited_stateaction_value(self):
+        """
+        :return q_est: q_estimations
+        :return sa_visited: tuple of state and action visited
+        """
+        if self.iter_ct == 0:
+            warnings.warn("Have not run rollout, returning null values..")
+            return (np.array([]), np.arary([[]]))
+
+        q_est = np.copy(self.r_batch)
+        s_visited = np.copy(self.s_batch)
+        a_visited = np.copy(self.a_batch)
+        ct = 0
+
+        for i in range(self.reset_iter_ct+1):
+            # episode duration = [episode_start, episode_end)
+            if i == 0:
+                t_0 = episode_start = 0
+            else:
+                t_0 = episode_start = self.reset_steps[i-1]
+            if i < self.reset_iter_ct:
+                episode_end = self.reset_steps[i]
+            else:
+                episode_end = self.iter_ct
+
+            # when two consecutive steps are termination/truncates
+            if episode_start+1 >= episode_end:
+                continue
+
+            episode_truncated = self.truncate_batch[episode_end-1]
+
+            # rewards appear on second step 
+            rwds = self.r_batch[episode_start+1:episode_end]
+            weight_factors = np.power(self.gamma, np.arange(len(rwds)))
+            weighted_rwds = np.multiply(weight_factors, rwds)
+            cumulative_weighted_rwds = np.cumsum(weighted_rwds[::-1])[::-1]
+            # normalize discount because `cumulative_weighted_rwds` weighs k-th
+            # state-action value by gamma^(k-1); we do not want this scaling
+            np.divide(cumulative_weighted_rwds, weight_factors, out=cumulative_weighted_rwds)
+            
+            for dt in range(episode_end-episode_start-1):
+                t = t_0+dt
+
+                # trajectory too short to estimate Monte-Carlo estimate well
+                if episode_truncated and t+self.cutoff>episode_end:
+                    break
+
+                s_visited[ct] = self.s_batch[t]
+                a_visited[ct] = self.a_batch[t]
+                q_est[ct] = cumulative_weighted_rwds[dt]
+                ct += 1
+
+        q_est = q_est[:ct]
+        sa_visited = (s_visited[:ct], a_visited[:ct])
+
+        return (q_est, sa_visited)
