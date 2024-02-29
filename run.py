@@ -30,7 +30,8 @@ def main():
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
-        "alpha": 0.01,
+        "alpha": 0.1,
+        "dim": 400,
     })
     # alg = PMDFiniteStateAction(env, params)
     alg = PMDGeneralStateFiniteAction(env, params)

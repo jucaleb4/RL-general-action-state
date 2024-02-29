@@ -129,7 +129,7 @@ class PMD(ABC):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        return (0.001/(self.t+1))**0.5 
+        return (1./(self.t+1))**0.5 
         # return np.sqrt((1-self.params["gamma"])/(self.t))
 
     def remap_obs(self, obs): 
@@ -315,8 +315,8 @@ class PMDGeneralStateFiniteAction(PMD):
         # replace coefficients
         model.coef_ = self.theta_accum
         # predict at X
-        policy_at_s = np.atleast_2d(np.copy(model.predict(Phi_s.T)))
-        policy_at_s = np.exp(policy_at_s - np.max(policy_at_s))
+        log_policy_at_s = np.atleast_2d(np.copy(model.predict(Phi_s.T)))
+        policy_at_s = np.exp(-(log_policy_at_s - np.min(log_policy_at_s)))
 
         safe_normalize_row(policy_at_s)
 
