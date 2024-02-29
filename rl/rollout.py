@@ -9,20 +9,9 @@ import numpy as np
 
 import gymnasium as gym
 
-def get_space_dimension(space):
-    """ Get dimension and data type of the space. We currently only support Box and Dicrete """
-    assert hasattr(space, "_shape"), "Missing `_shape` attribute"
-    assert hasattr(space, "dtype"), "Missing `dtype` attribute"
-
-    space_is_box = isinstance(space, gym.spaces.box.Box)
-    space_is_dis = isinstance(space, gym.spaces.discrete.Discrete)
-    assert space_is_box or space_is_dis, f"Space type {type(space)} unsupported (must be Box or Discrete)"
-
-    dim = space._shape[0] if len(space._shape) > 0 else 1
-    data_type = space.dtype
-    n_vals = space.n if space_is_dis else -1
-
-    return (dim, data_type, n_vals)
+from rl.utils import remap_vec_to_int
+from rl.utils import get_space_property
+from rl.utils import get_space_cardinality
 
 def add_rows_array(arr):
     """ 
@@ -38,6 +27,8 @@ def native_type(x):
         - https://github.com/numpy/numpy/issues/2951
         - https://stackoverflow.com/questions/9452775/converting-numpy-dtypes-to-native-python-types
     """
+    if isinstance(x, np.ndarray):
+        x = x.flat[0]
     # trick: https://stackoverflow.com/questions/12569452/how-to-identify-numpy-types-in-python
     if type(x).__module__ == np.__name__:
         return type(x.item())
@@ -51,20 +42,17 @@ class Rollout:
         self.gamma = gamma 
 
         # Process the environment's state and action space
-        obs_space = env.observation_space
-        action_space = env.action_space
-        (obs_dim, obs_type, n_states) = get_space_dimension(obs_space)
-        (action_dim, action_type, n_actions) = get_space_dimension(action_space)
-
-        self.n_states = n_states
-        self.n_actions = n_actions
+        self.obs_space = env.observation_space
+        self.action_space = env.action_space
+        (_, obs_dim, obs_type) = get_space_property(self.obs_space)
+        (_, action_dim, action_type) = get_space_property(self.action_space)
 
         # Create arrays to store the batch information (row by row)
         capacity = 32
         self.iter_ct = 0
         self.reset_iter_ct = 0
-        self.s_batch = np.zeros((capacity, obs_dim), dtype=obs_type)  
-        self.a_batch = np.zeros((capacity, action_dim), dtype=action_type)
+        self.s_batch = np.zeros((capacity,) +  obs_dim, dtype=obs_type)  
+        self.a_batch = np.zeros((capacity,) + action_dim, dtype=action_type)
         self.r_batch = np.zeros(capacity, dtype=float)
         self.terminate_batch = np.zeros(capacity, dtype=bool)
         self.truncate_batch = np.zeros(capacity, dtype=bool)
@@ -81,9 +69,9 @@ class Rollout:
         :param terminate: environment terminated
         :param truncate: environment truncated
         """
-        assert native_type(state) == native_type(self.s_batch.flat[0]), \
+        assert native_type(state) == native_type(self.s_batch), \
             f"type(state)={native_type(state)} does not match {native_type(self.s_batch[0])}"
-        assert native_type(action) == native_type(self.a_batch.flat[0]), \
+        assert native_type(action) == native_type(self.a_batch), \
             f"type(action)={native_type(action)} does not match {native_type(self.a_batch[0])}"
         assert native_type(reward) in [int, float], \
             f"type(reward)={native_type(reward)} not numerical"
@@ -110,13 +98,15 @@ class Rollout:
             self.reset_steps[self.reset_iter_ct] = self.iter_ct
             self.reset_iter_ct += 1
             if self.reset_iter_ct == len(self.reset_steps):
-                self.reset_steps = add_rows_arr(self.reset_steps)
+                self.reset_steps = add_rows_array(self.reset_steps)
 
-    def clear_batch(self):
+    def clear_batch(self, keep_last_obs=False):
         """ 
         Artifically clears the batch by resetting iteration counter. We do not
         remove any data point. 
         """
+        if keep_last_obs and self.iter_ct > 0:
+            self.s_batch[0] = self.s_batch[self.iter_ct-1]
         self.iter_ct = 0
         self.reset_iter_ct = 0
 
@@ -130,19 +120,23 @@ class Rollout:
         :return Q: 2d array of estimated Q function (via Monte Carlo)
         :return Ind: 2d array of booleans whether we visited (s,a0
         """
-        Q = np.zeros((self.n_states, self.n_actions), dtype=float)
-        total_num_first_visits = np.zeros((self.n_states, self.n_actions), dtype=int)
+        n_states = get_space_cardinality(self.obs_space)
+        n_actions = get_space_cardinality(self.action_space)
+        Q = np.zeros((n_states, n_actions), dtype=float)
+        total_num_first_visits = np.zeros((n_states, n_actions), dtype=int)
 
         if self.iter_ct == 0:
             warnings.warn("Have not run rollout, returning null values..")
             return (Q, total_num_first_visits > 0)
 
+        # import ipdb; ipdb.set_trace()
+        do_print = False
         for i in range(self.reset_iter_ct+1):
             # episode duration = [episode_start, episode_end)
             if i == 0:
-                episode_start = 0
+                t_0 = episode_start = 0
             else:
-                episode_start = self.reset_steps[i-1]
+                t_0 = episode_start = self.reset_steps[i-1]
             if i < self.reset_iter_ct:
                 episode_end = self.reset_steps[i]
             else:
@@ -163,9 +157,12 @@ class Rollout:
             
             visited_this_episode = np.zeros(total_num_first_visits.shape, dtype=int)
             for dt in range(episode_end-episode_start-1):
-                # TODO Provide mapping from raw state-action to state-action indices
-                s = self.s_batch[dt+episode_start][0]
-                a = self.a_batch[dt+episode_start][0]
+                s_ = self.s_batch[dt+t_0]
+                a_ = self.a_batch[dt+t_0]
+                if do_print:
+                    print(s_, a_)
+                s = remap_vec_to_int(s_, self.obs_space)
+                a = remap_vec_to_int(a_, self.action_space)
 
                 if visited_this_episode[s,a] == 0:
                     visited_this_episode[s,a] = 1

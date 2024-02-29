@@ -1,4 +1,4 @@
-from rl.pmd import PMDFiniteStateAction
 from rl.rollout import Rollout
+from rl.pmd import PMDFiniteStateAction
 
-import utils
+import rl.utils as utils

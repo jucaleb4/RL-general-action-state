@@ -13,22 +13,8 @@ import sklearn.linear_model as sklm
 from rl import Rollout
 from rl.utils import remap_vec_to_int
 from rl.utils import safe_normalize_row
-
-
-def check_space_is_finite(space):
-    """ Check space is finite and returns cardinality """
-    if isinstance(space, gym.spaces.discrete.Discrete):
-        assert hasattr(space, "start")
-        assert hasattr(space, "n")
-        return space.n
-    elif isinstance(space, gym.spaces.box.Box):
-        assert space.dtype == int, "Unsupported box type {space.dtype} (must be int/in64)"
-        assert hasattr(space, "low")
-        assert hasattr(space, "high")
-        assert np.all(space.high-space.low >= 0)
-        return np.prod(space.high-space.low+1)
-    else:
-        raise Exception("Unsupported space {type(space)} for finite spaces")
+from rl.utils import get_space_property
+from rl.utils import get_space_cardinality
 
 class PMD(ABC):
     def __init__(self, env, params):
@@ -58,6 +44,8 @@ class PMD(ABC):
 
             mean_perf = self.policy_performance()
             print(f"[{self.t}] mean(V)={mean_perf}")
+            # print(f"policy:\n{self.policy}")
+            # print(f"A:\n{self.Q_est}\n")
 
         print(f"Final policy:\n{self.policy}")
 
@@ -71,25 +59,24 @@ class PMD(ABC):
 
     def collect_rollouts(self):
         """ Collect samples for policy evaluation """
-        self.rollout.clear_batch()
-        if self.initialized_env or not self.params["single_trajectory"]:
+        self.rollout.clear_batch(keep_last_obs=self.params["single_trajectory"])
+        if not self.initialized_env or not self.params["single_trajectory"]:
             (s,_) = self.env.reset()
             self.initialized_env = True
+        else:
+            s = self.rollout.get_state(0)
 
-        s = self.remap_obs(self.rollout.get_state(0))
-        a = self.remap_action(self.policy_sample(s, eps=0.05))
+        a = self.policy_sample(s)
         self.rollout.add_step_data(s, a)
 
         for t in range(self.rollout_len): 
             (s, r, term, trunc, _)  = self.env.step(a)
-            s = self.remap_obs(s)
-            a = self.remap_action(self.policy_sample(s, eps=0.05))
+            a = self.policy_sample(s)
             self.rollout.add_step_data(s, a, r, term, trunc)
 
             if term or trunc:
                 (s, _) = self.env.reset()
-                s = self.remap_obs(s)
-                a = self.remap_action(self.policy_sample(s))
+                a = self.policy_sample(s)
                 self.rollout.add_step_data(s, a)
 
     @abstractmethod
@@ -121,10 +108,8 @@ class PMD(ABC):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        # TODO: Make this more robust
-        # return self.params["gamma"]**(-self.t)
-        return (self.t)**0.5
-        # return 1
+        # return (1./self.t)**0.5 
+        return np.sqrt(1/(self.t))
 
     def remap_obs(self, obs): 
         """ 
@@ -144,10 +129,15 @@ class PMDFiniteStateAction(PMD):
     def __init__(self, env, params):
         super().__init__(env, params)
 
-        self.n_actions = check_space_is_finite(env.action_space)
-        self.n_states  = check_space_is_finite(env.observation_space)
         self.action_space = env.action_space
         self.obs_space = env.observation_space
+        (action_is_finite, _, _) = get_space_property(self.action_space)
+        (obs_is_finite, _, _)  = get_space_property(self.obs_space)
+        self.n_states = get_space_cardinality(self.obs_space)
+        self.n_actions = get_space_cardinality(self.action_space)
+
+        assert action_is_finite, "Action space not finite"
+        assert obs_is_finite, "Observation space not finite"
 
         # uniform policy
         self.policy = np.ones((self.n_states, self.n_actions), dtype=float)
@@ -156,15 +146,17 @@ class PMDFiniteStateAction(PMD):
 
         self._setup_random_fourier_features(self.n_states*self.n_actions)
 
-    def policy_sample(self, s, eps=0.):
+    def policy_sample(self, s):
         """ Samples random action from current policy 
 
         TODO: Find mapping from integers to original action (see #1)
         """
-        assert 0 <= s < self.n_states, f"invalid s={s} ({self.n_states} states)"
+        s_ = remap_vec_to_int(s, self.obs_space)
+        assert 0 <= s_ < self.n_states, f"invalid s={s} ({self.n_states} states)"
+        eps = self.params.get("eps_explore", 0)
         assert 0 <= eps <= 1
 
-        pi = (1.-eps)*self.policy[s] + eps/self.n_actions
+        pi = (1.-eps)*self.policy[s_] + eps/self.n_actions
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
@@ -267,14 +259,14 @@ class PMDFiniteStateAction(PMD):
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
 
-    def remap_obs(self, obs): 
+    def remap_obs(self, obs):
         if isinstance(obs, np.ndarray):
-            obs = remap_vec_to_int(obs, self.obs_space)
+            return obs.flat[0]
         return obs
 
-    def remap_action(self, action): 
+    def remap_action(self, action):
         if isinstance(action, np.ndarray):
-            action = remap_vec_to_int(action, self.action_space)
+            return action.flat[0]
         return action
 
 class PMDGeneralStateFiniteAction(PMD):
@@ -355,7 +347,10 @@ class PMDGeneralStateFiniteAction(PMD):
             partial_q_est = np.reshape(Q_est, newshape=(-1,))[ind_est]
             Q_est = self.ridge_regression(X, partial_q_est)
 
-        return Q_est
+        # return Q_est
+
+        A_est = Q_est - np.atleast_2d(Q_est@self.policy)
+        return A_est
 
     def ridge_regression(self, X, y):
         """ Fit and predicts with ridge regression """
@@ -404,13 +399,3 @@ class PMDGeneralStateFiniteAction(PMD):
 
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
-
-    def remap_obs(self, obs): 
-        if isinstance(obs, np.ndarray):
-            obs = obs[0]
-        return obs - self.s_0
-
-    def remap_action(self, a): 
-        if isinstance(a, np.ndarray):
-            a = a[0]
-        return a - self.a_0
