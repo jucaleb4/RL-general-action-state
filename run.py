@@ -7,17 +7,20 @@ def main():
     env = gym.make(
         "gym_examples/GridWorld-v0", 
         # "gym_examples/SimpleWorld-v0", 
-        size=2,
+        size=4,
         action_eps=0.00,
-        # max_episode_steps=2000, # can change length here!
+        max_episode_steps=1000, # can change length here!
     )
     env = gym.wrappers.FlattenObservation(env)
     env = gym.wrappers.TransformReward(env, lambda r : 1-r)
     output = env.reset()
 
+    # import ipdb; ipdb.set_trace()
+
     params = dict({
         "gamma": 0.999,
         "verbose": True,
+        "rollout_len": 1000,
     })
     alg = PMDFiniteStateAction(env, params)
 

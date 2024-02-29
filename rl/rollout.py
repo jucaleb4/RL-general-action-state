@@ -9,7 +9,7 @@ import numpy as np
 
 import gymnasium as gym
 
-from rl.utils import remap_vec_to_int
+from rl.utils import vec_to_int
 from rl.utils import get_space_property
 from rl.utils import get_space_cardinality
 
@@ -50,7 +50,7 @@ class Rollout:
         # Create arrays to store the batch information (row by row)
         capacity = 32
         self.iter_ct = 0
-        self.reset_iter_ct = 0
+        self.reset_iter_ct = 1 # first step is a reset step
         self.s_batch = np.zeros((capacity,) +  obs_dim, dtype=obs_type)  
         self.a_batch = np.zeros((capacity,) + action_dim, dtype=action_type)
         self.r_batch = np.zeros(capacity, dtype=float)
@@ -113,6 +113,20 @@ class Rollout:
     def get_state(self, t):
         return self.s_batch[t]
 
+    def get_batch_rewards(self):
+        batch_rewards = []
+        for t in range(self.iter_ct):
+            # not the first step in episode
+            if t > 0 and (t-1) not in self.reset_steps[:self.reset_iter_ct]:
+                batch_rewards.append(self.r_batch[t])
+        return np.array(batch_rewards)
+
+    def get_episode_lens(self):
+        """ Gets episode lengths """
+        if self.reset_iter_ct == 1:
+            return np.array([self.iter_ct-1])
+        return np.ediff1d(np.append(self.reset_steps[:self.reset_iter_ct], self.iter_ct-1))-1
+
     def compute_enumerated_stateaction_value(self):
         """ Compute advatange function 
         # TODO: Compute GAE (https://arxiv.org/pdf/1506.02438.pdf)
@@ -161,8 +175,8 @@ class Rollout:
                 a_ = self.a_batch[dt+t_0]
                 if do_print:
                     print(s_, a_)
-                s = remap_vec_to_int(s_, self.obs_space)
-                a = remap_vec_to_int(a_, self.action_space)
+                s = vec_to_int(s_, self.obs_space)
+                a = vec_to_int(a_, self.action_space)
 
                 if visited_this_episode[s,a] == 0:
                     visited_this_episode[s,a] = 1

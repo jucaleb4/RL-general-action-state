@@ -4,19 +4,23 @@ import numpy as np
 
 import gymnasium as gym
 
-def safe_normalize_row(arr, tol=1e-16):
+def safe_normalize_row(arr, tol=1e-32):
     """ 
-    Normalizes rows (in place) so rows sum to 1, then round small numbers to 0
+    Normalizes rows (in place) so rows sum to 1
     
     :param tol: cut off for smallest value for row sum
     """
-    assert tol <= 1e-8, f"tol={tol} too large (<= 1e-8)"
+    assert tol <= 1e-16, f"tol={tol} too large (<= 1e-16)"
     assert np.min(arr) >= 0, "Given arr with negative value"
+
     policy_row_sum = np.atleast_2d(np.sum(arr, axis=1)).T
     rows_whose_sum_is_near_zero = np.where(policy_row_sum < tol)
     arr[rows_whose_sum_is_near_zero] += tol
     np.divide(arr, np.atleast_2d(np.sum(arr, axis=1)).T, out=arr)
-    np.round(arr, decimals=max(32, -np.log(tol)/np.log(10)), out=arr)
+
+    assert not np.any(np.isnan(arr)), "inf in arr"
+    assert np.min(arr) >= 0, f"min(arr)={np.min(arr)} < 0"
+    assert np.allclose(np.sum(arr, axis=1), 1.), "rows not sum to 1"
 
 def get_space_property(space):
     """ Retruns if space is finite and its dimensionality
@@ -31,7 +35,7 @@ def get_space_property(space):
         is_finite = space.dtype == int
         return (is_finite, space.shape, space.dtype)
     else:
-        raise Exception("Unsupported type {space} (only support Discrete and Box)")
+        raise Exception(f"Unsupported type {space} (only support Discrete and Box)")
 
 def get_space_cardinality(space):
     """ If finite, return space cardinality """
@@ -42,12 +46,11 @@ def get_space_cardinality(space):
         assert np.all(space.high-space.low >= 0)
         return np.prod(space.high-space.low+1)
     else:
-        raise Exception("Space {space} is not Discrete or Box")
+        raise Exception(f"Space {space} is not Discrete or Box")
 
-def remap_vec_to_int(obs, space):
+def vec_to_int(obs, space):
     """ 
-    Map discrete spaces (from Discrete or Box) to a single integer with origin
-    0
+    Maps discrete values (from Discrete or Box) to an integer with origin 0
     """
     if isinstance(space, gym.spaces.discrete.Discrete):
         return obs[0]
@@ -59,4 +62,28 @@ def remap_vec_to_int(obs, space):
         obs_as_int = (obs[0]-low[0]) + np.dot((obs-low)[1:], multiplier)
         return obs_as_int
     else:
-        raise Exception("Unsupported space {type(space)} for finite spaces")
+        raise Exception(f"Unsupported space {type(space)} for finite spaces")
+
+def int_to_vec(i, space):
+    """ 
+    Maps integers (origin 0) to discrete values (from Discrete or Box)
+    """
+    if isinstance(space, gym.spaces.discrete.Discrete):
+        return np.array([i])
+    elif isinstance(space, gym.spaces.box.Box):
+        low  = space.low
+        high = space.high
+        diff = high-low+1
+        dim = len(diff)
+        obs = np.zeros(dim, dtype=int)
+        obs[0] = i % diff[0]
+        multiplier = np.cumprod(diff)[:len(obs)-1]
+        obs[1:] = np.mod(np.floor(np.divide(i, multiplier)), diff[1:])
+        return obs
+    else:
+        raise Exception(f"Unsupported space {type(space)} for finite spaces")
+
+def pretty_print_gridworld(arr, space):
+    for i,a in enumerate(arr):
+        print(f"  {int_to_vec(i, space)} : {a}")
+    
