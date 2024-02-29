@@ -132,8 +132,8 @@ class FiniteStateActionRollout(unittest.TestCase):
         self.assertLessEqual(la.norm(Q-correct_Q, ord=np.inf)/normalize_const, 1e-16)
 
     def test_compute_enumerated_stateaction_value_visit_partial(self):
-        """ Same as test above but we do not have the last two state-action 
-        values. We now have
+        """ Same as test above but we do not have the last two
+        steps/state-action values. We now have
 
           >> 9.6746631597       (0,0)*
           >> 9.772387029999999  (1,0)*
