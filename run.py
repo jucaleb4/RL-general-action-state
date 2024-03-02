@@ -33,6 +33,7 @@ def main():
         "alpha": 0.1,
         "dim": 100,
         "normalize": True,
+        "fit_mode": 1,
     })
     # alg = PMDFiniteStateAction(env, params)
     alg = PMDGeneralStateFiniteAction(env, params)

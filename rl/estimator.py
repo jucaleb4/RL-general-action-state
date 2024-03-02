@@ -83,9 +83,9 @@ class FunctionApproximator():
             self.models[i].fit(features, y)
         else: 
             # an SGD step
-            for x in X:
-                features = self.featurize_state(x)
-                self.models[i].partial_fit([features], [y])
+            for x_i,y_i in zip(X,y):
+                features = self.featurize(np.atleast_2d(x_i))
+                self.models[i].partial_fit(features, [y_i])
 
     def set_coef(self, coef, i):
          assert 0 <= i < len(self.models)
