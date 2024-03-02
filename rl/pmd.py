@@ -144,8 +144,8 @@ class PMD(ABC):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        return 0.02
-        # return (1./(self.t+1))**0.5 
+        # return np.sqrt(1-self.params["gamma"])
+        return (1./(self.t+1))**0.5 
         # return np.sqrt((1-self.params["gamma"])/(self.t))
 
     def remap_obs(self, obs): 
@@ -383,6 +383,7 @@ class PMDGeneralStateFiniteAction(PMD):
         for i in range(self.n_actions):
             action_i_idx = np.where(a_visited==i)[0]
             if len(action_i_idx) == 0:
+                print(f"Did not update action {i}")
                 continue
             self.fa.update(X[action_i_idx], y[action_i_idx], i)
             self.last_thetas[i] = np.copy(self.fa.get_coef(i))
