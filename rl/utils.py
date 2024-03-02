@@ -105,3 +105,53 @@ def get_rbf_features(W, b, X, sigma):
     """
     B = np.repeat(b[:, np.newaxis], X.shape[0], axis=1)
     return np.sqrt(2./W.shape[0]) * np.cos(sigma * W @ X.T + B)
+
+class RunningStat():
+    """ From: https://www.johndcook.com/blog/standard_deviation/ """
+    def __init__(self, n):
+        # online dynamic (mean and sample variance) accumulators
+        self._M = np.zeros(n, dtype=float)
+        self._S = np.zeros(n, dtype=float)
+        self._k = 0
+
+        # non-dynamic accumualtors; `update()` sets to most recent _M and _S
+        self.M = np.copy(self._M)
+        self.S = np.copy(self._S)
+        self.k = 0
+
+        # If we have not updated, pass back variance of 1
+        self.S_0 = np.ones(n, dtype=float)
+
+    def push(self, x):
+        self._k += 1
+        diff = x-self.M
+        self._M += (diff)/self._k
+        self._S += np.dot(diff, diff)
+
+    def clear(self):
+        self.M[:] = 0
+        self.S[:] = 0
+        self.k = 0
+        self._M[:] = 0
+        self._S[:] = 0
+        self._k = 0
+
+    def update(self):
+        self.M = self._M
+        self.S = self._S
+        self.k = self._k
+
+    @property
+    def mean(self):
+        return self.M
+
+    @property
+    def var(self, tol=1e-3):
+        """ For vars which are very small, do not change variance """
+        if self.k < 1:
+            return self.S_0
+
+        S = np.copy(self.S)
+        idx_where_var_small = np.where(self.S < tol)[0]
+        S[idx_where_var_small] = 1
+        return S/(self.k-1.)

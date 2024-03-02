@@ -26,12 +26,13 @@ def main():
     # import ipdb; ipdb.set_trace()
 
     params = dict({
-        "gamma": 0.99,
+        "gamma": 0.999,
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
         "alpha": 0.1,
-        "dim": 400,
+        "dim": 100,
+        "normalize": True,
     })
     # alg = PMDFiniteStateAction(env, params)
     alg = PMDGeneralStateFiniteAction(env, params)
