@@ -72,16 +72,32 @@ class Rollout:
         self.truncate_batch = np.zeros(capacity, dtype=bool)
         self.reset_steps = np.zeros(capacity, dtype=int)
 
+        self.s_raw_batch = np.copy(self.s_batch)
+        self.a_raw_batch = np.copy(self.a_batch)
+        self.r_raw_batch = np.copy(self.r_batch)
+
     def set_gamma(self, gamma):
         self.gamma = gamma
 
-    def add_step_data(self, state, action, reward=0, terminate=False, truncate=False):
+    def add_step_data(
+            self, 
+            state, 
+            action, 
+            reward=0, 
+            terminate=False, 
+            truncate=False,
+            s_raw=None,
+            a_raw=None,     
+            r_raw=None,
+        ):
         """ Adds data returned from step 
         :param s: current state after step
         :param a: action
         :param r: reward
         :param terminate: environment terminated
         :param truncate: environment truncated
+
+        TODO: Store both nominal and raw data
         """
         assert native_type(state) == native_type(self.s_batch), \
             f"type(state)={native_type(state)} does not match {native_type(self.s_batch[0])}"
@@ -99,6 +115,9 @@ class Rollout:
         self.r_batch[self.iter_ct] = reward
         self.terminate_batch[self.iter_ct] = terminate
         self.truncate_batch[self.iter_ct] = truncate
+        self.s_raw_batch[self.iter_ct] = state if s_raw is None else s_raw
+        self.a_raw_batch[self.iter_ct] = action if a_raw is None else a_raw
+        self.r_raw_batch[self.iter_ct] = reward if r_raw is None else r_raw
         self.iter_ct += 1
 
         if self.iter_ct == len(self.s_batch):
@@ -107,6 +126,9 @@ class Rollout:
             self.r_batch = add_rows_array(self.r_batch)
             self.terminate_batch = add_rows_array(self.terminate_batch)
             self.truncate_batch = add_rows_array(self.truncate_batch)
+            self.s_raw_batch = add_rows_array(self.s_raw_batch)
+            self.a_raw_batch = add_rows_array(self.a_raw_batch)
+            self.r_raw_batch = add_rows_array(self.r_raw_batch)
 
         if terminate or truncate:
             self.reset_steps[self.reset_iter_ct] = self.iter_ct
@@ -134,7 +156,7 @@ class Rollout:
             episode_end = self.reset_steps[t+1]
             if episode_start == episode_end:
                 continue
-            rewards = self.r_batch[episode_start:episode_end]
+            rewards = self.r_raw_batch[episode_start:episode_end]
             weights = np.power(self.gamma, np.arange(len(rewards)))
             episode_reward = np.dot(weights, rewards)
             episode_rewards_arr.append(episode_reward)
