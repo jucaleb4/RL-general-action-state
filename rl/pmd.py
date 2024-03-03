@@ -198,7 +198,9 @@ class PMDFiniteStateAction(PMD):
         assert len(Q_est.shape) == 2
 
         if self.params.get("verbose", 0) >= 1:
-            print(f"Visited {np.sum(Ind_est)}/{np.prod(np.shape(Ind_est))} sa pairs")
+            visited = np.sum(Ind_est)
+            total = np.prod(np.shape(Ind_est))
+            print(f"Visited {visited}/{total} sa pairs")
 
         self.Q_est = Q_est
         self.Ind_est = Ind_est
@@ -229,13 +231,15 @@ class PMDFiniteStateAction(PMD):
         safe_normalize_row(self.policy)
 
     def policy_update_gradient_processing(self, G, policy_threshold):
-        """ Sets Q-function large (in-place) for poor state-action pairs """
+        """ 
+        Sets Q-function large (in-place) for rarefly visited state-action pairs
+        """
         below_threshold_idxs = np.where(self.policy <= policy_threshold)
         if np.sum(below_threshold_idxs) == 0:
             return 
         upper_vals = np.maximum(np.max(G, axis=1), 1./(1-self.params["gamma"]))
         upper_vals = np.repeat(np.expand_dims(upper_vals, axis=1), self.n_actions, axis=1)
-        G[below_threshold_idxs] = upper_vals[below_threshold_idxs]
+        np.put(G, below_threshold_idxs, uppder_vals)
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -302,8 +306,8 @@ class PMDGeneralStateFiniteAction(PMD):
         sigma = self.params.get("sigma", 1)
 
         # request features at {(s,a)}_{a=0,...,n_actions-1}
-        X = np.repeat([s.astype("float")], repeats=self.n_actions, axis=0)
         # TODO: Handle either Discrete or Box
+        X = np.repeat([s.astype("float")], repeats=self.n_actions, axis=0)
         X = np.hstack((X, np.expand_dims(np.arange(self.n_actions), axis=1)))
         Phi_s = get_rbf_features(self.W, self.b, X, sigma)
 
