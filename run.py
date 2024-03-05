@@ -1,10 +1,20 @@
+import os
+
+# just for perlmutter
+if False:
+    import sys
+    sys.path.append("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages")
+    sys.path.append("/global/homes/c/cju33/gym-examples")
+import multiprocessing as mp
+
 import gymnasium as gym
 import gym_examples
 
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
+from rl import QLearn
 
-def main():
+def main(seed):
     # env = gym.make(
     #     "gym_examples/GridWorld-v0", 
         # "gym_examples/SimpleWorld-v0", 
@@ -27,8 +37,10 @@ def main():
 
     # import ipdb; ipdb.set_trace()
 
+    fname = os.path.join("logs", f"qlearn_ll_seed={seed}.csv")
+
     params = dict({
-        "gamma": 0.9,
+        "gamma": 1.0,
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
@@ -37,11 +49,34 @@ def main():
         "normalize": True,
         "fit_mode": 1,
         "cutoff": 1,
+        "fname": fname,
     })
     # alg = PMDFiniteStateAction(env, params)
-    alg = PMDGeneralStateFiniteAction(env, params)
+    # alg = PMDGeneralStateFiniteAction(env, params)
+    alg = QLearn(env, params)
 
     alg.learn(n_iter=1000)
 
+def run_main_multiprocessing(num_start, num_end):
+    num_exp = num_end - num_start
+    assert num_exp >= 1
+    num_proc = mp.cpu_count()
+    num_threads = min(num_proc, num_exp)
+    procs = []
+
+    for i in range(num_start, num_end):
+        if len(procs) == num_threads:
+            for p in procs:
+                p.join()
+            procs = []
+
+<<<<<<< HEAD
+    alg.learn(n_iter=1000)
+=======
+        p = mp.Process(target=main, args=(i,))
+        p.start()
+        procs.append(p)
+>>>>>>> d24a5a6e6cb0024b5e83533efe44e3dd6424ea09
+
 if __name__ == "__main__":
-    main()
+    run_main_multiprocessing(1,10)

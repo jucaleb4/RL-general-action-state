@@ -1,5 +1,4 @@
 """ Policy mirror descent """
-from abc import ABC
 from abc import abstractmethod
 
 import warnings 
@@ -11,6 +10,7 @@ import gymnasium as gym
 
 import sklearn.linear_model as sklm
 
+from rl import RLAlg
 from rl import Rollout
 from rl import FunctionApproximator
 from rl.utils import vec_to_int
@@ -22,26 +22,15 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 
-class PMD(ABC):
+class PMD(RLAlg):
     def __init__(self, env, params):
-        self.params = params
-
-        self.env = env
-        self.params = params
+        super().__init__(env, params)
         self.check_params()
-        self.rng = np.random.default_rng(params.get("seed", None))
 
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
 
         self.initialized_env = False
-
-    def learn(self, n_iter: int=100):
-        self.t = 0
-        try:
-            self._learn(n_iter)
-        except KeyboardInterrupt:
-            print(f"Terminated early at iteration {self.t}")
 
     def _learn(self, n_iter):
         """ Runs PMD algorithm for `n_iter`s """
@@ -95,17 +84,8 @@ class PMD(ABC):
                 break
 
     @abstractmethod
-    def policy_sample(self, s):
-        """ Returns an action uses current policy 
-
-        :param s: state/observation we want an action for
-        :return a: 
-        """
-        return self.env.action_space.sample()
-
-    @abstractmethod
     def policy_evaluate(self):
-        """ Uses samples to estimate policy value """
+        """ Uses samples to estimate policy value function """
         raise NotImplemented
 
     @abstractmethod
@@ -240,7 +220,7 @@ class PMDFiniteStateAction(PMD):
         policy_threshold = self.n_actions**(-2/(1-self.params["gamma"]))
         self.policy_update_gradient_processing(G, policy_threshold)
         G -= np.atleast_2d(np.max(G, axis=1)).T
-        self.policy = np.multiply(self.policy, np.exp(-eta*G))
+        self.policy = np.multiply(self.policy, np.exp(eta*G))
 
         safe_normalize_row(self.policy)
 
