@@ -52,6 +52,7 @@ class PMD(RLAlg):
             # print(f"[{self.t}] mean(V)={mean_perf}")
 
         # print(f"Final policy:\n{self.policy}")
+        self.save_episode_reward_and_len()
 
     def check_params(self):
         if "single_trajectory" not in self.params:
@@ -137,7 +138,7 @@ class PMD(RLAlg):
     def normalize_rwd(self, r):
         return r
 
-    def save_episode_reward_and_len():
+    def save_episode_reward_and_len(self):
         rwd_arr = self.rollout.get_episode_rewards()
         len_arr = self.rollout.get_episode_lens()
 
