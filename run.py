@@ -1,5 +1,11 @@
 import os
 
+# just for perlmutter
+if False:
+    import sys
+    sys.path.append("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages")
+    sys.path.append("/global/homes/c/cju33/gym-examples")
+
 import gymnasium as gym
 import gym_examples
 
