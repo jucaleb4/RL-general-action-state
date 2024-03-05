@@ -3,6 +3,7 @@ import gym_examples
 
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
+from rl import QLearn
 
 def main():
     # env = gym.make(
@@ -22,13 +23,13 @@ def main():
         max_episode_steps=1000, # can change length here!
     )
 
-    env = gym.wrappers.TransformReward(env, lambda r : -r)
+    # env = gym.wrappers.TransformReward(env, lambda r : -r)
     output = env.reset()
 
     # import ipdb; ipdb.set_trace()
 
     params = dict({
-        "gamma": 0.9,
+        "gamma": 0.0,
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
@@ -38,7 +39,8 @@ def main():
         "fit_mode": 1,
     })
     # alg = PMDFiniteStateAction(env, params)
-    alg = PMDGeneralStateFiniteAction(env, params)
+    # alg = PMDGeneralStateFiniteAction(env, params)
+    alg = QLearn(env, params)
 
     alg.learn(n_iter=100)
 
