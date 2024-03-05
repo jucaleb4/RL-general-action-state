@@ -16,8 +16,10 @@ def main():
     # env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env = gym.make(
-        "LunarLander-v2", 
+        # "LunarLander-v2", 
+        "MountainCar-v0", 
         # render_mode="human"
+        max_episode_steps=1000, # can change length here!
     )
 
     env = gym.wrappers.TransformReward(env, lambda r : -r)
@@ -26,7 +28,7 @@ def main():
     # import ipdb; ipdb.set_trace()
 
     params = dict({
-        "gamma": 0.999,
+        "gamma": 0.9,
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
