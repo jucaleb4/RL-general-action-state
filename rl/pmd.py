@@ -103,12 +103,13 @@ class PMD(RLAlg):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        # return self.params["gamma"]**(-self.t)
-        # return np.sqrt(1-self.params["gamma"])
-        # return 1
-        return (self.t+1)**(-0.5)
-        # return (max(0.01, 1-self.params["gamma"])/(self.t+1))**(0.5)
-        # return np.sqrt((1-self.params["gamma"])/(self.t))
+        eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
+        base_stepsize = self.params.get("base_stepsize", eta_0)
+
+        if self.params.get("stepsize", "constant") == "constant":
+            return base_stepsize
+        if self.params["stepsize"] == "decreasing":
+            return base_stepsize * (self.t+1)**(-0.5)
 
     def remap_obs(self, obs): 
         """ 
@@ -136,9 +137,19 @@ class PMD(RLAlg):
     def normalize_rwd(self, r):
         return r
 
-    def save_episode_reward_and_len()
-        episode_rwd_arr = self.rollout.get_episode_rewards()
-        episode_len_arr = self.rollout.get_episode_lens()
+    def save_episode_reward_and_len():
+        rwd_arr = self.rollout.get_episode_rewards()
+        len_arr = self.rollout.get_episode_lens()
+
+        if "fname" not in self.params:
+            warnings.warn("No filename given, not saving")
+            return
+        fmt="%1.2f,%i"
+        arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
+        with open(self.params["fname"], "wb") as fp:
+            fp.write(b"episode rewards,episode len\n")
+            np.savetxt(fp, arr, fmt=fmt)
+        print(f"Saved episode data to {self.params['fname']}")
 
 class PMDFiniteStateAction(PMD):
     def __init__(self, env, params):
@@ -274,6 +285,7 @@ class PMDGeneralStateFiniteAction(PMD):
         self.n_actions = get_space_cardinality(self.action_space)
         if "dim" not in params:
             warnings.warn("Did not pass 'dim' into params, setting dim=100")
+        # TODO: Use this for function approximation
         dim = params.get("dim", 100)
         if isinstance(obs_dim, tuple):
             assert len(obs_dim) == 1, "Can only handle 1D observation space"
@@ -414,7 +426,7 @@ class PMDGeneralStateFiniteAction(PMD):
         Runs the environment for a fixed number of iterations estimate
         empirical mean and variance of observations, actions, and rewards
         """
-        old_rollout_len = self.rollout_len
+        old_rollout_len = self.params["rollout_len"]
         self.rollout_len = max(1000, self.n_actions*100)
         self.collect_rollouts()
         self.rollout_len = old_rollout_len

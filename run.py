@@ -16,7 +16,7 @@ from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
 from rl import QLearn
 
-def main(seed):
+def main(alg, env_name, seed, settings):
     # env = gym.make(
     #     "gym_examples/GridWorld-v0", 
         # "gym_examples/SimpleWorld-v0", 
@@ -28,7 +28,8 @@ def main(seed):
     # env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env = gym.make(
-        "LunarLander-v2", 
+        env_name,
+        # "LunarLander-v2", 
         # "MountainCar-v0", 
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
@@ -39,27 +40,31 @@ def main(seed):
 
     # import ipdb; ipdb.set_trace()
 
-    fname = os.path.join("logs", f"qlearn_ll_seed={seed}.csv")
+    fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
 
     params = dict({
-        "gamma": 1.0,
+        "gamma": settings["gamma"],
         "verbose": False,
-        "rollout_len": 1000,
+        "rollout_len": settings["rollout_len"],
         "single_trajectory": True,
-        "alpha": 0.1,
         "dim": 100,
         "normalize": True,
         "fit_mode": 1,
         "cutoff": 1,
         "fname": fname,
+        "stepsize": settings["stepsize"],
     })
     # alg = PMDFiniteStateAction(env, params)
-    # alg = PMDGeneralStateFiniteAction(env, params)
-    alg = QLearn(env, params)
+    if alg == "pmd":
+        alg = PMDGeneralStateFiniteAction(env, params)
+    elif alg == "qlearn":
+        alg = QLearn(env, params)
+    else:
+        return 
 
-    alg.learn(n_iter=1000)
+    alg.learn(n_iter=settings["n_iter"])
 
-def run_main_multiprocessing(num_start, num_end):
+def run_main_multiprocessing(alg, env_name, num_start, num_end):
     num_exp = num_end - num_start
     assert num_exp >= 1
     num_proc = mp.cpu_count()
@@ -72,9 +77,27 @@ def run_main_multiprocessing(num_start, num_end):
                 p.join()
             procs = []
 
-        p = mp.Process(target=main, args=(i,))
+        p = mp.Process(target=main, args=(alg, env_name, i,))
         p.start()
         procs.append(p)
 
 if __name__ == "__main__":
-    run_main_multiprocessing(1,10)
+    parser = argparse.ArgumentParser(prog='RL algs', description='RL algorithms')
+    parser.add_argument('--alg', default="pmd", choices=["qlearn", "pmd"], help="Algorithm")
+    parser.add_argument('--env_name', default="LunarLander-v2", choices=["LunarLander-v2", "MountainCar-v0"], help="Environment")
+
+    parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
+    parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
+    parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode")
+    parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
+
+    parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
+    parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")
+
+    args = parser.parse_args()
+
+    if args.parallel:
+        run_main_multiprocessing(args.alg, args.env_name, 0, args.parallel_runs)
+    else:
+        # no seeding yet
+        main(args.alg, args.env_name, 0, vars(args))
