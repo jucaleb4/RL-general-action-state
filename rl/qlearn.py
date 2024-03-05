@@ -22,15 +22,9 @@ class Estimator():
     def __init__(self, scaler, featurizer, env):
         self.scaler = scaler
         self.featurizer = featurizer
-        # We create a separate model for each action in the environment's
-        # action space. Alternatively we could somehow encode the action
-        # into the features, but this way it's easier to code up.
         self.models = []
         for _ in range(env.action_space.n):
             model = SGDRegressor(learning_rate="constant")
-            # We need to call partial_fit once to initialize the model
-            # or we get a NotFittedError when trying to make a prediction
-            # This is quite hacky.
             model.partial_fit([self.featurize_state(env.reset()[0])], [0])
             self.models.append(model)
     
@@ -90,7 +84,7 @@ class QLearn(RLAlg):
             self.params["epsilon_decay"] = 1.0
 
     def get_featurizer(self):
-        observation_examples = np.array([self.env.observation_space.sample() for x in range(10000)])
+        observation_examples = np.array([self.env.observation_space.sample() for _ in range(10000)])
         scaler = sklearn.preprocessing.StandardScaler()
         scaler.fit(observation_examples)
         
@@ -129,6 +123,8 @@ class QLearn(RLAlg):
 
     def _learn(self, n_iter):
         last_reward = 0
+        episode_rewards = np.zeros(n_iter, dtype=float)
+        episode_lens = np.zeros(n_iter, dtype=int)
 
         for i in range(n_iter):
             epsilon_ = self.params["epsilon"] * self.params["epsilon_decay"]**i
@@ -177,13 +173,28 @@ class QLearn(RLAlg):
                 # Update the function approximator using our target
                 self.estimator.update(state, action, td_target)
             
-                print("\rStep {} @ Episode {}/{} ({})".format(t, i + 1, n_iter, last_reward), end="")
+                print("\rStep {} @ Episode {}/{} (last episode:{})".format(t, i + 1, n_iter, last_reward), end="")
                 
                 if done:
                     last_reward = curr_reward
+                    episode_rewards[i] = last_reward
+                    episode_lens[i] = t
                     curr_reward = 0
                     print("")
                     break
                 
                 state = next_state
                 t += 1
+
+        self.save_episode_rewards(episode_rewards, episode_lens)
+
+    def save_episode_rewards(self, rwd_arr, len_arr):
+        if "fname" not in self.params:
+            warnings.warn("No filename given, not saving")
+            return
+        fmt="%1.2f,%i"
+        arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
+        with open(self.params["fname"], "wb") as fp:
+            fp.write(b"episode rewards,episode len\n")
+            np.savetxt(fp, arr, fmt=fmt)
+        print(f"Saved episode data to {self.params['fname']}")

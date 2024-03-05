@@ -1,3 +1,5 @@
+import os
+
 import gymnasium as gym
 import gym_examples
 
@@ -17,9 +19,9 @@ def main():
     # env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env = gym.make(
-        # "LunarLander-v2", 
-        "MountainCar-v0", 
-        # render_mode="human"
+        "LunarLander-v2", 
+        # "MountainCar-v0", 
+        # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
 
@@ -28,8 +30,10 @@ def main():
 
     # import ipdb; ipdb.set_trace()
 
+    fname = os.path.join("logs", "qlearn_ll_seed=0.csv")
+
     params = dict({
-        "gamma": 0.0,
+        "gamma": 1.0,
         "verbose": False,
         "rollout_len": 1000,
         "single_trajectory": True,
@@ -37,12 +41,13 @@ def main():
         "dim": 100,
         "normalize": True,
         "fit_mode": 1,
+        "fname": fname,
     })
     # alg = PMDFiniteStateAction(env, params)
     # alg = PMDGeneralStateFiniteAction(env, params)
     alg = QLearn(env, params)
 
-    alg.learn(n_iter=100)
+    alg.learn(n_iter=1000)
 
 if __name__ == "__main__":
     main()
