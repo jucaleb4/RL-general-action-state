@@ -79,6 +79,9 @@ class FunctionApproximator():
 
         features = self.featurize(X)
         self.models[i].fit(features, y)
+        # for x_i,y_i in zip(X,y):
+        #     features = self.featurize(np.atleast_2d(x_i))
+        #     self.models[i].partial_fit(features, [y_i])
         # if self.fit_mode == FitMode.SAA:
         #     # solve regularized SAA problem
         #     features = self.featurize(X)

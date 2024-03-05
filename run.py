@@ -16,13 +16,13 @@ def main():
     # env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env = gym.make(
-        # "LunarLander-v2", 
-        "MountainCar-v0", 
-        # render_mode="human"
+        "LunarLander-v2", 
+        # "MountainCar-v0", 
+        # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
 
-    env = gym.wrappers.TransformReward(env, lambda r : -r)
+    # env = gym.wrappers.TransformReward(env, lambda r : -r)
     output = env.reset()
 
     # import ipdb; ipdb.set_trace()
@@ -36,11 +36,12 @@ def main():
         "dim": 100,
         "normalize": True,
         "fit_mode": 1,
+        "cutoff": 1,
     })
     # alg = PMDFiniteStateAction(env, params)
     alg = PMDGeneralStateFiniteAction(env, params)
 
-    alg.learn(n_iter=100)
+    alg.learn(n_iter=1000)
 
 if __name__ == "__main__":
     main()
