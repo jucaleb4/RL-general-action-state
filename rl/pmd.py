@@ -46,7 +46,10 @@ class PMD(ABC):
     def _learn(self, n_iter):
         """ Runs PMD algorithm for `n_iter`s """
         for t in range(n_iter):
+            print(f"=== Start iteration {t} ===")
             self.t = t
+
+            self.params["eps_explore"] = 0.05 + 0.95 * 0.99**t
 
             self.collect_rollouts()
 
@@ -56,7 +59,7 @@ class PMD(ABC):
 
             mean_perf = self.policy_performance()
             # print(f"[{self.t}] mean episode len={np.mean(self.rollout.get_episode_lens()):.1f}")
-            print(f"[{self.t}] mean episode rwd={np.mean(self.rollout.get_episode_rewards()):.1f}")
+            # print(f"[{self.t}] mean episode rwd={np.mean(self.rollout.get_episode_rewards()):.1f}")
             # print(f"[{self.t}] mean(V)={mean_perf}")
 
             if self.params.get("verbose", 0) >= 2:
@@ -96,8 +99,6 @@ class PMD(ABC):
 
         for t in range(self.rollout_len): 
             (s, r, term, trunc, _)  = self.env.step(a)
-            if t == self.rollout_len-1:
-                trunc = True
 
             s_ = self.normalize_obs(s)
             r_ = self.normalize_rwd(r)

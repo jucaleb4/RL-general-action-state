@@ -72,9 +72,9 @@ class Rollout:
         self.truncate_batch = np.zeros(capacity, dtype=bool)
         self.reset_steps = np.zeros(capacity, dtype=int)
 
-        self.s_raw_batch = np.copy(self.s_batch)
-        self.a_raw_batch = np.copy(self.a_batch)
-        self.r_raw_batch = np.copy(self.r_batch)
+        self.all_episode_reward = []
+        self.curr_episode_time = 0
+        self.curr_episode_cum_rwd = 0
 
     def set_gamma(self, gamma):
         self.gamma = gamma
@@ -115,10 +115,17 @@ class Rollout:
         self.r_batch[self.iter_ct] = reward
         self.terminate_batch[self.iter_ct] = terminate
         self.truncate_batch[self.iter_ct] = truncate
-        self.s_raw_batch[self.iter_ct] = state if s_raw is None else s_raw
-        self.a_raw_batch[self.iter_ct] = action if a_raw is None else a_raw
-        self.r_raw_batch[self.iter_ct] = reward if r_raw is None else r_raw
         self.iter_ct += 1
+
+        if self.curr_episode_time > 0:
+            self.curr_episode_cum_rwd += reward
+        self.curr_episode_time += 1
+
+        if terminate or truncate:
+            self.curr_episode_time = 0
+            self.all_episode_reward.append(self.curr_episode_cum_rwd)
+            self.curr_episode_cum_rwd = 0
+            print(f"Ep {len(self.all_episode_reward)} reward: {self.all_episode_reward[-1]:.2f}")
 
         if self.iter_ct == len(self.s_batch):
             self.s_batch = add_rows_array(self.s_batch)
@@ -126,9 +133,6 @@ class Rollout:
             self.r_batch = add_rows_array(self.r_batch)
             self.terminate_batch = add_rows_array(self.terminate_batch)
             self.truncate_batch = add_rows_array(self.truncate_batch)
-            self.s_raw_batch = add_rows_array(self.s_raw_batch)
-            self.a_raw_batch = add_rows_array(self.a_raw_batch)
-            self.r_raw_batch = add_rows_array(self.r_raw_batch)
 
         if terminate or truncate:
             self.reset_steps[self.reset_iter_ct] = self.iter_ct
@@ -138,13 +142,17 @@ class Rollout:
 
     def clear_batch(self, keep_last_obs=False):
         """ 
-        Artifically clears the batch by resetting iteration counter. We do not
-        remove any data point. 
+        Artifically clears the batch by resetting iteration counter. 
         """
         if keep_last_obs and self.iter_ct > 0:
             self.s_batch[0] = self.s_batch[self.iter_ct-1]
         self.iter_ct = 0
         self.reset_iter_ct = 0
+
+        self.s_batch[:] = 0
+        self.a_batch[:] = 0
+        self.r_batch[:] = 0
+        self.reset_steps[:] = 0
 
     def get_state(self, t):
         return self.s_batch[t]
