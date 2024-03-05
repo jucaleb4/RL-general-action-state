@@ -7,6 +7,8 @@ if False:
     sys.path.append("/global/homes/c/cju33/gym-examples")
 import multiprocessing as mp
 
+import argparse
+
 import gymnasium as gym
 import gym_examples
 
@@ -70,13 +72,9 @@ def run_main_multiprocessing(num_start, num_end):
                 p.join()
             procs = []
 
-<<<<<<< HEAD
-    alg.learn(n_iter=1000)
-=======
         p = mp.Process(target=main, args=(i,))
         p.start()
         procs.append(p)
->>>>>>> d24a5a6e6cb0024b5e83533efe44e3dd6424ea09
 
 if __name__ == "__main__":
     run_main_multiprocessing(1,10)
