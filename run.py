@@ -30,24 +30,25 @@ def main():
 
     # import ipdb; ipdb.set_trace()
 
-    fname = os.path.join("logs", "qlearn_ll_seed=0.csv")
+    for i in range(1,10):
+        fname = os.path.join("logs", f"qlearn_ll_seed={i}.csv")
 
-    params = dict({
-        "gamma": 1.0,
-        "verbose": False,
-        "rollout_len": 1000,
-        "single_trajectory": True,
-        "alpha": 0.1,
-        "dim": 100,
-        "normalize": True,
-        "fit_mode": 1,
-        "fname": fname,
-    })
-    # alg = PMDFiniteStateAction(env, params)
-    # alg = PMDGeneralStateFiniteAction(env, params)
-    alg = QLearn(env, params)
+        params = dict({
+            "gamma": 1.0,
+            "verbose": False,
+            "rollout_len": 1000,
+            "single_trajectory": True,
+            "alpha": 0.1,
+            "dim": 100,
+            "normalize": True,
+            "fit_mode": 1,
+            "fname": fname,
+        })
+        # alg = PMDFiniteStateAction(env, params)
+        # alg = PMDGeneralStateFiniteAction(env, params)
+        alg = QLearn(env, params)
 
-    alg.learn(n_iter=1000)
+        alg.learn(n_iter=1000)
 
 if __name__ == "__main__":
     main()
