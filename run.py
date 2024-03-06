@@ -65,7 +65,7 @@ def main(alg, env_name, seed, settings):
 
     alg.learn(n_iter=settings["n_iter"])
 
-def run_main_multiprocessing(alg, env_name, num_start, num_end):
+def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
     num_exp = num_end - num_start
     assert num_exp >= 1
     num_proc = mp.cpu_count()
@@ -78,7 +78,7 @@ def run_main_multiprocessing(alg, env_name, num_start, num_end):
                 p.join()
             procs = []
 
-        p = mp.Process(target=main, args=(alg, env_name, i,))
+        p = mp.Process(target=main, args=(alg, env_name, i, settings))
         p.start()
         procs.append(p)
 
