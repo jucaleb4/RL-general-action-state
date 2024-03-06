@@ -15,6 +15,7 @@ import gym_examples
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
 from rl import QLearn
+from rl import PPO
 
 def main(alg, env_name, seed, settings):
     # env = gym.make(
@@ -29,8 +30,6 @@ def main(alg, env_name, seed, settings):
 
     env = gym.make(
         env_name,
-        # "LunarLander-v2", 
-        # "MountainCar-v0", 
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
@@ -59,6 +58,8 @@ def main(alg, env_name, seed, settings):
         alg = PMDGeneralStateFiniteAction(env, params)
     elif alg == "qlearn":
         alg = QLearn(env, params)
+    elif alg == "ppo":
+        alg = PPO(env, params)
     else:
         return 
 
@@ -82,9 +83,12 @@ def run_main_multiprocessing(alg, env_name, num_start, num_end):
         procs.append(p)
 
 if __name__ == "__main__":
+    # TODO: Print settings of the problem
+    # TODO: Reformat code so we don't pass params in the final function invokation
     parser = argparse.ArgumentParser(prog='RL algs', description='RL algorithms')
-    parser.add_argument('--alg', default="pmd", choices=["qlearn", "pmd"], help="Algorithm")
+    parser.add_argument('--alg', default="pmd", choices=["qlearn", "pmd", "ppo"], help="Algorithm")
     parser.add_argument('--env_name', default="LunarLander-v2", choices=["LunarLander-v2", "MountainCar-v0"], help="Environment")
+    parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
 
     parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
@@ -97,7 +101,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.parallel:
-        run_main_multiprocessing(args.alg, args.env_name, 0, args.parallel_runs)
+        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs)
     else:
         # no seeding yet
-        main(args.alg, args.env_name, 0, vars(args))
+        main(args.alg, args.env_name, args.seed, vars(args))

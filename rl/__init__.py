@@ -7,3 +7,4 @@ from rl.estimator import FunctionApproximator
 from rl.pmd import PMDFiniteStateAction
 from rl.pmd import PMDGeneralStateFiniteAction
 from rl.qlearn import QLearn
+from rl.ppo import PPO
