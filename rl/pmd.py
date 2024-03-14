@@ -450,18 +450,18 @@ class PMDGeneralStateFiniteAction(PMD):
     def normalize_obs(self, s):
         self.obs_runstat.push(s)
         if self.params.get("normalize_obs", False):
-            return np.divide(s-self.obs_runstat.mean, self.obs_runstat.var)
+            return np.divide(s-self.obs_runstat.mean, np.sqrt(self.obs_runstat.var))
         return s
 
     def normalize_action(self, a):
         self.obs_runstat.push(a)
         if self.params.get("normalize_action", False):
-            return np.divide(a-self.action_runstat.mean, self.action_runstat.var)
+            return np.divide(a-self.action_runstat.mean, np.sqrt(self.action_runstat.var))
         return a
 
     def normalize_rwd(self, r):
         if self.params.get("normalize_rwd", False):
-            return np.divide(r-self.rwd_runstat.mean, self.rwd_runstat.var)
+            return np.divide(r-self.rwd_runstat.mean, np.sqrt(self.rwd_runstat.var**0.5))
         return r
 
 # class PMDGeneralStateAction(PMD):

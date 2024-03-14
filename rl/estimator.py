@@ -96,9 +96,17 @@ class FunctionApproximator():
          assert 0 <= i < len(self.models)
          self.models[i].coef_ = coef
 
+    def set_intercept(self, intercept, i):
+         assert 0 <= i < len(self.models)
+         self.models[i].intercept_ = intercept
+
     def get_coef(self, i):
          assert 0 <= i < len(self.models)
          return self.models[i].coef_
+
+    def get_intercept(self, i):
+         assert 0 <= i < len(self.models)
+         return self.models[i].intercept_
 
     @property
     def dim(self):
