@@ -106,6 +106,8 @@ class PMD(RLAlg):
     def get_stepsize_schedule(self):
         eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
         base_stepsize = self.params.get("base_stepsize", eta_0)
+        if base_stepsize <= 0:
+            base_stepsize = eta_0
 
         if self.params.get("stepsize", "constant") == "constant":
             return base_stepsize
