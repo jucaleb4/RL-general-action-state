@@ -47,10 +47,10 @@ class Rollout:
             if self.gamma == 1:
                 self.cutoff = 100
             else:
-                self.cutoff = int(1+1./(1-gamma))
+                self.cutoff = int(1+1./(1-self.gamma))
             warnings.warn(f"No cutoff specified, setting to {self.cutoff}")
         else:
-            self.cutoff = kwargs["cutoff"]
+            self.cutoff = max(0, kwargs["cutoff"])
         assert self.cutoff > 0, "Monte-Carlo cutoff {self.cutoff} not positive"
 
         # Process the environment's state and action space
@@ -258,7 +258,8 @@ class Rollout:
         # state-action value by gamma^(k-1); we do not want this scaling
         np.divide(cumulative_weighted_rwds, weight_factors, out=cumulative_weighted_rwds)
 
-        q_est = cumulative_weighted_rwds
+        cutoff = min(self.cutoff, len(cumulative_weighted_rwds)-1)
+        q_est = cumulative_weighted_rwds[:-cutoff]
         s_visited = np.copy(self.s_batch[1:len(q_est)+1])
         a_visited = np.copy(self.a_batch[1:len(q_est)+1])
         sa_visited = (s_visited, a_visited)

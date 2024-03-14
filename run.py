@@ -49,7 +49,6 @@ def main(alg, env_name, seed, settings):
         "dim": 100,
         "normalize": True,
         "fit_mode": 1,
-        "cutoff": 1,
         "fname": fname,
         "stepsize": settings["stepsize"],
     })
@@ -94,6 +93,7 @@ if __name__ == "__main__":
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode")
     parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
+    parser.add_argument('--base_stepsize', default=-1, type=float, help="base stepsize")
 
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
     parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.parallel:
-        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs)
+        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, vars(args))
     else:
         # no seeding yet
         main(args.alg, args.env_name, args.seed, vars(args))
