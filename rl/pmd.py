@@ -309,7 +309,9 @@ class PMDGeneralStateFiniteAction(PMD):
         (X, _) = sa_visited_tuple
         self.fa = FunctionApproximator(self.n_actions, X, params)
         self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
+        self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
         self.theta_accum = np.copy(self.last_thetas)
+        self.intercept_accum = np.copy(self.last_intercepts)
 
     def check_PMDGeneralStateFiniteAction_params(self):
         # TODO: Remove this is doing NN or SGD
@@ -326,6 +328,7 @@ class PMDGeneralStateFiniteAction(PMD):
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
         for i in range(self.n_actions):
             self.fa.set_coef(self.theta_accum[i], i)
+            self.fa.set_intercept(self.intercept_accum[i], i)
             log_policy_at_s[i] = self.fa.predict(np.atleast_2d(s), i)
         policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
         policy_at_s = np.atleast_2d(policy_at_s)
@@ -364,6 +367,7 @@ class PMDGeneralStateFiniteAction(PMD):
         if ep_truncated:
             last_s, last_a = s_visited[-1], a_visited[-1].flat[0]
             self.fa.set_coef(self.last_thetas[last_a], last_a)
+            self.fa.set_intercept(self.last_intercepts[last_a], last_a)
             q_last_sa_est = self.fa.predict(np.atleast_2d(last_s), last_a)
             gamma_weight = np.power(self.params["gamma"], np.arange(1,1+len(q_est)))[::-1]
             q_est += q_last_sa_est * gamma_weight
@@ -379,6 +383,7 @@ class PMDGeneralStateFiniteAction(PMD):
                 continue
             self.fa.update(X[action_i_idx], y[action_i_idx], i)
             self.last_thetas[i] = np.copy(self.fa.get_coef(i))
+            self.last_intercepts[i] = np.copy(self.fa.get_intercept(i))
 
     def ctd_Q(self):
         raise NotImplemented
@@ -398,6 +403,7 @@ class PMDGeneralStateFiniteAction(PMD):
         """ Policy update with PMD and KL divergence """
         self.updated_at_least_once = True
         self.theta_accum += self.get_stepsize_schedule()*self.last_thetas
+        self.intercept_accum += self.get_stepsize_schedule()*self.last_intercepts
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
