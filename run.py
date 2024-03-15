@@ -127,7 +127,7 @@ if __name__ == "__main__":
         settings = vars(args)
         if len(args.settings_file) > 6 and args.settings_file[-4:] == "json":
             with open(args.settings_file, "r") as fp:
-                new_settings = json.load(args.setting_file)
+                new_settings = json.load(fp)
             settings.update(new_settings)
         run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
     else:

@@ -4,14 +4,14 @@
     "base_stepsize": 0.1100018528,
     "c_h": 0.0001972422736,
     "gamma": 0.9,
-    "normalize_obs": False,
-    "normalize_rwd": False,
+    "normalize_obs": false,
+    "normalize_rwd": false,
     "rollout_len": 1256,
     "sgd_alpha": 0.001377209469,
     "sgd_n_iter": 38140,
     "sgd_stepsize": "constant",
     "stepsize": "constant",
-    "use_advantage": True,
-    "save_logs": True
-    "n_iter": 100,
+    "use_advantage": true,
+    "save_logs": true,
+    "n_iter": 100
 }
