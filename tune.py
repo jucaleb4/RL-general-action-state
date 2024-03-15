@@ -18,10 +18,9 @@ def get_wandb_tuning_sweep_id():
 
     parameters_dict = {
         'c_h': { 
-            'distribution': 'q_log_uniform_values',
-            'q': 10,
-            'min': 1e-10,
-            'max': 10,
+            'distribution': 'uniform',
+            'min': -6,
+            'max': 0,
         },
         'use_advantage': {
             'values': [True, False],
@@ -35,10 +34,9 @@ def get_wandb_tuning_sweep_id():
             'values': ['constant', 'decreasing'],
         },
         'base_stepsize': {
-            'distribution': 'q_log_uniform_values',
-            'q': 10,
-            'min': 1e-4,
-            'max': 1,
+            'distribution': 'uniform',
+            'min': -3,
+            'max': 0,
         },
         'rollout_len': { 
             'distribution': 'q_log_uniform_values',
@@ -53,10 +51,9 @@ def get_wandb_tuning_sweep_id():
             'values': [True, False],
         },
         'sgd_alpha': {
-            'distribution': 'q_log_uniform_values',
-            'q': 10,
-            'min': 1e-6,
-            'max': 1,
+            'distribution': 'uniform',
+            'min': -4,
+            'max': 0,
         },
         'sgd_stepsize': {
             'values': ['constant', 'optimal'],
@@ -74,70 +71,16 @@ def get_wandb_tuning_sweep_id():
 
     return sweep_id
 
-def hi():
-    params = dict({
-        "verbose": False,
-        "c_h": 0,
-        "use_advantage": True,
-        "gamma": 1.,
-        "stepsize": "constant",
-        "base_stepsize": 1,
-        "rollout_len": 1024, 
-        "normalize_obs": True,
-        "normalize_rwd": True,
-        "sgd_alpha": 0.0001,
-        "sgd_stepsize": "constant", 
-        "sgd_n_iter": 10000,
-    })
-    for _ in range(1):
-        params["verbose"] = False
-        params["n_iter"] = 2 # 200
-
-        n_trials = 1 # 10
-        n_proc = mp.cpu_count()
-        n_threads = min(n_proc, n_trials)
-        final_rewards_arr = np.zeros(n_trials, dtype=float)
-
-        manager = mp.Manager()
-        returned_dict = manager.dict()
-        procs = []
-        for i in range(n_trials):
-            if len(procs) == n_threads:
-                for p in procs:
-                    p.join()
-                procs = []
-
-            p = mp.Process(target=run_pmd_exp, args=(
-                "pmd", 
-                "LunarLander-v2", 
-                i, 
-                params, 
-                returned_dict)
-            )
-            p.start()
-            procs.append(p)
-
-        if len(procs) > 0:
-            for p in procs:
-                p.join()
-            procs = []
-
-        final_rwds = []
-        for i in range(n_trials):
-            final_rwds.append(returned_dict[i])
-            
-        wandb.log({
-            "median_reward": np.median(final_rwds), 
-            "all_rewards": final_rwds,
-        })    
-
 def wandb_tune_pmd_linear(config=None):
     # Initialize a new wandb run
     with wandb.init(config=config):
         config = wandb.config
-        params = dict(config)
+        params = dict(config).copy()
         params["verbose"] = False
-        params["n_iter"] = 20
+        params["n_iter"] = 2
+        params["c_h"] = 10**params["c_h"]
+        params["base_stepsize"] = 10**params["base_stepsize"]
+        params["sgd_alpha"] = 10**params["sgd_alpha"]
 
         n_trials = 10
         n_proc = mp.cpu_count()
