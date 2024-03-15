@@ -64,20 +64,23 @@ class Rollout:
 
         # Create arrays to store the batch information (row by row)
         capacity = 32
-        self.iter_ct = 0
-        self.reset_iter_ct = 1 # first step is a reset step
+        self.time_ct = 0
+        self.reset_time_ct = 1 # first step is a reset step
         self.s_batch = np.zeros((capacity,) + obs_dim, dtype=obs_type)  
         self.a_batch = np.zeros((capacity,) + action_dim, dtype=action_type)
-
         self.r_batch = np.zeros(capacity, dtype=float)
-        self.terminate_batch = np.zeros(capacity, dtype=bool)
-        self.truncate_batch = np.zeros(capacity, dtype=bool)
+        self.v_batch = np.copy(self.r_batch)
+        self.done_batch = np.zeros(capacity, dtype=bool)
         self.reset_steps = np.zeros(capacity, dtype=int)
 
-        self.all_episode_reward = []
-        self.all_episode_len = []
-        self.curr_episode_time = 0
-        self.curr_episode_cum_rwd = 0
+        self.s_raw_batch = np.copy(self.s_batch)
+        self.a_raw_batch = np.copy(self.a_batch)
+        self.r_raw_batch = np.copy(self.r_batch)
+
+        self.all_ep_cum_rwd = []
+        self.all_ep_len = []
+        self.curr_ep_len = 0
+        self.curr_ep_cum_rwd = 0
 
     def set_gamma(self, gamma):
         self.gamma = gamma
@@ -86,9 +89,9 @@ class Rollout:
             self, 
             state, 
             action, 
-            reward=0, 
-            terminate=False, 
-            truncate=False,
+            reward, 
+            done,
+            value=0,
             s_raw=None,
             a_raw=None,     
             r_raw=None,
@@ -108,67 +111,68 @@ class Rollout:
             f"type(action)={native_type(action)} does not match {native_type(self.a_batch[0])}"
         assert native_type(reward) in [int, float], \
             f"type(reward)={native_type(reward)} not numerical"
-        assert native_type(terminate) == bool, \
-            f"type(terminate)={native_type(terminate)} not bool"
-        assert native_type(truncate) == bool, \
-            f"type(truncate)={native_type(truncate)} not bool"
+        assert native_type(done) == bool, \
+            f"type(done)={native_type(done)} not bool"
 
-        # TODO: Redo this so that iter_ct is not incremented until the end
-        # TODO: Change for reset to truncate...
-        self.s_batch[self.iter_ct] = state
-        self.a_batch[self.iter_ct] = action
-        self.r_batch[self.iter_ct] = reward
-        self.terminate_batch[self.iter_ct] = terminate
-        self.truncate_batch[self.iter_ct] = truncate
-        self.iter_ct += 1
+        s_raw = state if s_raw is None else s_raw
+        a_raw = action if a_raw is None else a_raw
+        r_raw = reward if r_raw is None else r_raw
 
-        if self.curr_episode_time > 0:
-            self.curr_episode_cum_rwd += reward
-        self.curr_episode_time += 1
+        self.s_batch[self.time_ct] = state
+        self.a_batch[self.time_ct] = action
+        self.r_batch[self.time_ct] = reward
+        self.done_batch[self.time_ct] = done
+        self.v_batch[self.time_ct]= value
+        self.s_raw_batch[self.time_ct] = s_raw
+        self.a_raw_batch[self.time_ct] = a_raw
+        self.r_raw_batch[self.time_ct] = r_raw
+        self.time_ct += 1
 
-        if terminate or truncate:
-            self.curr_episode_time = 0
-            self.all_episode_reward.append(self.curr_episode_cum_rwd)
-            self.all_episode_len.append(self.iter_ct)
-            self.curr_episode_cum_rwd = 0
-            print(f"Ep {len(self.all_episode_reward)} reward: {self.all_episode_reward[-1]:.2f}")
+        # self.curr_ep_cum_rwd = r_raw + self.gamma*self.curr_ep_cum_rwd
+        self.curr_ep_cum_rwd = r_raw + self.curr_ep_cum_rwd
+        self.curr_ep_len += 1
 
-        if self.iter_ct == len(self.s_batch):
+        if done:
+            moving_avg = 0
+            if len(self.all_ep_cum_rwd) > 0:
+                i = min(25, len(self.all_ep_cum_rwd))
+                moving_avg = np.mean(self.all_ep_cum_rwd[-i:])
+            print(f"Ep {len(self.all_ep_cum_rwd)} reward: {self.curr_ep_cum_rwd:.2f} (25-moving avg: {moving_avg:.2f})")
+            self.all_ep_cum_rwd.append(self.curr_ep_cum_rwd)
+            self.all_ep_len.append(self.curr_ep_len)
+            self.curr_ep_cum_rwd = 0
+            self.curr_ep_len = 0
+
+        if self.time_ct == len(self.s_batch):
             self.s_batch = add_rows_array(self.s_batch)
             self.a_batch = add_rows_array(self.a_batch)
             self.r_batch = add_rows_array(self.r_batch)
-            self.terminate_batch = add_rows_array(self.terminate_batch)
-            self.truncate_batch = add_rows_array(self.truncate_batch)
+            self.v_batch = add_rows_array(self.v_batch)
+            self.done_batch = add_rows_array(self.done_batch)
+            self.s_raw_batch = add_rows_array(self.s_raw_batch)
+            self.a_raw_batch = add_rows_array(self.a_raw_batch)
+            self.r_raw_batch = add_rows_array(self.r_raw_batch)
 
-        if terminate or truncate:
-            self.reset_steps[self.reset_iter_ct] = self.iter_ct
-            self.reset_iter_ct += 1
-            if self.reset_iter_ct == len(self.reset_steps):
-                self.reset_steps = add_rows_array(self.reset_steps)
-
-    def clear_batch(self, keep_last_obs=False):
-        """ 
-        Artifically clears the batch by resetting iteration counter. 
-        """
-        if keep_last_obs and self.iter_ct > 0:
-            self.s_batch[0] = self.s_batch[self.iter_ct-1]
-        self.iter_ct = 0
-        self.reset_iter_ct = 0
-
+    def clear_batch(self):
+        self.time_ct = 0
         self.s_batch[:] = 0
         self.a_batch[:] = 0
         self.r_batch[:] = 0
-        self.reset_steps[:] = 0
+        self.v_batch[:] = 0
+        self.done_batch[:] = 0
+        self.s_raw_batch[:] = 0
+        self.a_raw_batch[:] = 0
+        self.r_raw_batch[:] = 0
 
     def get_state(self, t):
         assert 0 <= abs(t) <= len(self.s_batch)
         return self.s_batch[t]
 
     def get_episode_rewards(self):
-        return self.all_episode_reward
+        return self.all_ep_cum_rwd
 
     def get_episode_lens(self):
-        return self.all_episode_len
+        return self.all_ep_len
 
     def compute_all_stateaction_value(self):
         """ Compute advatange function 
@@ -182,20 +186,20 @@ class Rollout:
         Q = np.zeros((n_states, n_actions), dtype=float)
         total_num_first_visits = np.zeros((n_states, n_actions), dtype=int)
 
-        if self.iter_ct == 0:
+        if self.time_ct == 0:
             warnings.warn("Have not run rollout, returning null values..")
             return (Q, total_num_first_visits > 0)
 
-        for i in range(self.reset_iter_ct+1):
+        for i in range(self.reset_time_ct+1):
             # episode duration = [episode_start, episode_end)
             if i == 0:
                 t_0 = episode_start = 0
             else:
                 t_0 = episode_start = self.reset_steps[i-1]
-            if i < self.reset_iter_ct:
+            if i < self.reset_time_ct:
                 episode_end = self.reset_steps[i]
             else:
-                episode_end = self.iter_ct
+                episode_end = self.time_ct
 
             # when two consecutive steps are termination/truncates
             if episode_start+1 >= episode_end:
@@ -236,36 +240,28 @@ class Rollout:
         Ind = total_num_first_visits > 0
         return (Q, Ind)
 
-    def visited_stateaction_value(self):
+    def get_est_stateaction_value(self, last_pred_value=0, last_state_done=False):
         """
-        :return q_est: q_estimations
-        :return sa_visited: tuple of state and action visited
+        Returns Q-function, advantage function with the corresponding
+        state-action pairs
+
+        :param last_pred_value: estimated cost-to-go for last state in rollout 
+        :param last_state_terminated: last state terminated (not truncated)
         """
-        if self.iter_ct == 0:
-            warnings.warn("Have not run rollout, returning null values..")
-            return (np.array([]), np.arary([[]]))
+        q_est = np.zeros(self.time_ct, dtype=float)
+        adv_est = np.copy(q_est)
+        # if truncated, we already appended cost-to-go
+        # if termianted, not cost-to-go
+        cum_rwd = last_pred_value * (1-int(last_state_done))
+        for t in reversed(range(self.time_ct)):
+            # if we recieved done, reset cum_rwd for new episode
+            if t < self.time_ct-1 and self.done_batch[t]:
+                cum_rwd = 0
+            cum_rwd = self.r_batch[t] + self.gamma * cum_rwd
+            q_est[t] = cum_rwd
+            adv_est[t] = cum_rwd - self.v_batch[t]
 
-        t_0 = episode_start = 0
-        episode_end = self.iter_ct # self.reset_steps[1]
-        episode_truncated = self.truncate_batch[episode_end-1]
+        s_visited = np.copy(self.s_batch[:self.time_ct])
+        a_visited = np.copy(self.a_batch[:self.time_ct])
 
-        # rewards appear on second step 
-        rwds = self.r_batch[episode_start+1:episode_end]
-        weight_factors = np.power(self.gamma, np.arange(len(rwds)))
-        weighted_rwds = np.multiply(weight_factors, rwds)
-        cumulative_weighted_rwds = np.cumsum(weighted_rwds[::-1])[::-1]
-        # normalize discount because `cumulative_weighted_rwds` weighs k-th
-        # state-action value by gamma^(k-1); we do not want this scaling
-        np.divide(cumulative_weighted_rwds, weight_factors, out=cumulative_weighted_rwds)
-
-        cutoff = min(self.cutoff, len(cumulative_weighted_rwds)-1)
-        q_est = cumulative_weighted_rwds[:-cutoff]
-        s_visited = np.copy(self.s_batch[1:len(q_est)+1])
-        a_visited = np.copy(self.a_batch[1:len(q_est)+1])
-        sa_visited = (s_visited, a_visited)
-
-        assert len(q_est) == len(s_visited) == len(a_visited), f"{len(q_est)} {len(s_visited)} {len(a_visited)}"
-
-        # print("best x-loc:", np.max(s_visited[:,0]), f"truncated: {episode_truncated}")
-
-        return (q_est, sa_visited, episode_truncated)
+        return (q_est, adv_est, s_visited, a_visited)

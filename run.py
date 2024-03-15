@@ -17,7 +17,7 @@ from rl import PMDGeneralStateFiniteAction
 from rl import QLearn
 from rl import PPO
 
-def main(alg, env_name, seed, settings):
+def main(alg, env_name, seed, settings, output={}):
     # env = gym.make(
     #     "gym_examples/GridWorld-v0", 
         # "gym_examples/SimpleWorld-v0", 
@@ -35,22 +35,28 @@ def main(alg, env_name, seed, settings):
     )
 
     # env = gym.wrappers.TransformReward(env, lambda r : -r)
-    output = env.reset()
+    env.reset()
 
     # import ipdb; ipdb.set_trace()
 
-    fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
+    fname = ""
+    if settings.get("save_logs", False):
+        fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
 
     params = dict({
-        "gamma": settings["gamma"],
         "verbose": False,
-        "rollout_len": settings["rollout_len"],
-        "single_trajectory": True,
-        "dim": 100,
-        "normalize": True,
-        "fit_mode": 1,
         "fname": fname,
+        "c_h": settings["c_h"],
+        "use_advantage": settings["use_advantage"],
+        "gamma": settings["gamma"],
         "stepsize": settings["stepsize"],
+        "base_stepsize": settings["base_stepsize"],
+        "rollout_len": settings["rollout_len"],
+        "normalize_obs": settings["normalize_obs"],
+        "normalize_rwd": settings["normalize_rwd"],
+        "sgd_alpha": settings["sgd_alpha"],
+        "sgd_stepsize": settings["sgd_stepsize"],
+        "sgd_n_iter": settings["sgd_n_iter"],
     })
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
@@ -62,7 +68,7 @@ def main(alg, env_name, seed, settings):
     else:
         return 
 
-    alg.learn(n_iter=settings["n_iter"])
+    output[seed] = alg.learn(n_iter=settings["n_iter"])
 
 def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
     num_exp = num_end - num_start
@@ -84,9 +90,14 @@ def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
 if __name__ == "__main__":
     # TODO: Print settings of the problem
     # TODO: Reformat code so we don't pass params in the final function invokation
-    parser = argparse.ArgumentParser(prog='RL algs', description='RL algorithms')
+    parser = argparse.ArgumentParser(
+        prog='RL algs', 
+        description='RL algorithms',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument('--alg', default="pmd", choices=["qlearn", "pmd", "ppo"], help="Algorithm")
     parser.add_argument('--env_name', default="LunarLander-v2", choices=["LunarLander-v2", "MountainCar-v0"], help="Environment")
+    parser.add_argument('--save_logs', action="store_true", help="Store logs to file")
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
 
     parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
@@ -94,6 +105,14 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode")
     parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
     parser.add_argument('--base_stepsize', default=-1, type=float, help="base stepsize")
+    parser.add_argument('--c_h', default=0, type=float, help="entropy regularizations trength")
+    parser.add_argument('--normalize_obs', action="store_true", help="Normalize observations via warm-start")
+    parser.add_argument('--normalize_rwd', action="store_true", help="Dynamically scale rewards")
+    parser.add_argument('--use_advantage', action="store_true", help="Use advantage function for policy update")
+
+    parser.add_argument("--sgd_stepsize", default="constant", choices=["constant", "optimal"])
+    parser.add_argument("--sgd_n_iter", type=int, default=10000, help="number of SGD iterations (e.g. 10-50x the rollout_len)")
+    parser.add_argument("--sgd_alpha", type=float, default=0.0001, help="Regularization strength")
 
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
     parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")

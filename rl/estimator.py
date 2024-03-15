@@ -29,9 +29,9 @@ class FunctionApproximator():
         :param X: initial set of states of fit the model
         """
         assert num_models > 0
-        self.fit_mode = FitMode(params.get("fit_mode", 0))
-        self.normalize = params.get("normalize", False)
-        self.alpha = params.get("alpha", 0.1)
+        self.fit_mode = 1 # FitMode(params.get("fit_mode", 0))
+        self.normalize = params["normalize_obs"]
+        self.alpha = params["sgd_alpha"]
 
         if self.normalize:
             self.scaler = sklearn.preprocessing.StandardScaler()
@@ -54,7 +54,7 @@ class FunctionApproximator():
                 model = Ridge(alpha=self.alpha)
                 model.fit(self.featurize([X[0]]), [0])
             else:
-                model = SGDRegressor(learning_rate="constant")
+                model = SGDRegressor(learning_rate=params["sgd_stepsize"], max_iter=params["sgd_n_iter"])
                 model.partial_fit(self.featurize([X[0]]), [0])
 
             self.models.append(model)
