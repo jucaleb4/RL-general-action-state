@@ -137,9 +137,9 @@ def wandb_tune_pmd_linear(config=None):
         config = wandb.config
         params = dict(config)
         params["verbose"] = False
-        params["n_iter"] = 2 # 200
+        params["n_iter"] = 20
 
-        n_trials = 1 # 10
+        n_trials = 10
         n_proc = mp.cpu_count()
         n_threads = min(n_proc, n_trials)
         final_rewards_arr = np.zeros(n_trials, dtype=float)
@@ -166,7 +166,6 @@ def wandb_tune_pmd_linear(config=None):
         if len(procs) > 0:
             for p in procs:
                 p.join()
-            procs = []
 
         final_rwds = []
         for i in range(n_trials):
@@ -178,6 +177,6 @@ def wandb_tune_pmd_linear(config=None):
         })    
 
 if __name__ == "__main__":
-    n_runs = 4 # 64
+    n_runs = 64
     sweep_id = get_wandb_tuning_sweep_id()
     wandb.agent(sweep_id, wandb_tune_pmd_linear, count=n_runs)
