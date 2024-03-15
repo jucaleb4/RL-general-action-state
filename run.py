@@ -2,9 +2,9 @@ import os
 import sys
 
 # for perlmutter
-if os.path.exist("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages"):
+if os.path.exists("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages"):
     sys.path.append("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages")
-if os.path.exist("/global/homes/c/cju33/gym-examples"):
+if os.path.exists("/global/homes/c/cju33/gym-examples"):
     sys.path.append("/global/homes/c/cju33/gym-examples")
 import multiprocessing as mp
 
