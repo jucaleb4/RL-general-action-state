@@ -10,6 +10,8 @@ import multiprocessing as mp
 
 import argparse
 
+import json
+
 import gymnasium as gym
 import gym_examples
 
@@ -100,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument('--env_name', default="LunarLander-v2", choices=["LunarLander-v2", "MountainCar-v0"], help="Environment")
     parser.add_argument('--save_logs', action="store_true", help="Store logs to file")
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
+    parser.add_argument('--settings_file', type=str, default="", help="Load settings")
 
     parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
@@ -121,7 +124,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.parallel:
-        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, vars(args))
+        settings = vars(args)
+        if len(args.settings_file) > 6 and args.settings_file[-4:] == "json":
+            with open(args.settings_file, "r") as fp:
+                new_settings = json.load(args.setting_file)
+            settings.update(new_settings)
+        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
     else:
         # no seeding yet
         main(args.alg, args.env_name, args.seed, vars(args))
