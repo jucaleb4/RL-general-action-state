@@ -31,6 +31,9 @@ class FOPO(RLAlg):
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
 
+        self.ep_ct = 0
+        self.n_ep = params["n_ep"] if params["n_ep"] > 0 else np.inf
+
     def _learn(self, n_iter):
         """ Runs PMD algorithm for `n_iter`s """
         for t in range(n_iter):
@@ -40,6 +43,9 @@ class FOPO(RLAlg):
             self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
 
             self.collect_rollouts()
+
+            if self.ep_ct == self.n_ep:
+                break
 
             self.policy_evaluate()
 
@@ -91,6 +97,9 @@ class FOPO(RLAlg):
             self.rollout.add_step_data(s, a, r, done, v_s, r_raw=r_raw)
             s = next_s
             if done:
+                self.ep_ct += 1
+                if self.ep_ct == self.n_ep:
+                    return 
                 s, _ = self.env.reset()
                 self._last_s = np.copy(s)
                 num_resets += 1
@@ -135,7 +144,7 @@ class FOPO(RLAlg):
         else:
             base_stepsize = self.params.get("base_stepsize", 1.)
             if base_stepsize <= 0:
-                base_stepsize = eta_0
+                base_stepsize = 1.
             if self.params["dynamic_stepsize"]:
                 base_stepsize /= (2*scale + mu_h)
             if self.params.get("stepsize", "constant") == "constant":

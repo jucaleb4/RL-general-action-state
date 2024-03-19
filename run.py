@@ -114,7 +114,9 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
     parser.add_argument('--settings_file', type=str, default="", help="Load settings")
 
-    parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
+    parser.add_argument('--n_iter', type=int, default=100, help="Max number of training iterations")
+    parser.add_argument('--n_ep', type=int, default=-1, help="Max number of training episodes")
+
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")
     parser.add_argument('--use_gae', action="store_true", help="Use generalized advantage function")

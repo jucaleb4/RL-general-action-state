@@ -247,7 +247,6 @@ class Rollout:
 
     def get_est_stateaction_value(self, last_pred_value=0, last_state_done=False):
         if self.use_gae:
-            print("here")
             return self.get_gae_stateaction_value(last_pred_value, last_state_done)
         else:
             return self.get_montecarlo_stateaction_value(last_pred_value, last_state_done)
