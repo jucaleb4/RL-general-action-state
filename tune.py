@@ -42,7 +42,7 @@ def get_wandb_tuning_sweep_id():
             'max': 4096,
         },
         'max_ep_per_iter': { 
-            'values': [1,2,4,8],
+            'values': [2,4,8],
         },
         'sgd_alpha': {
             'distribution': 'uniform',
@@ -73,12 +73,14 @@ def wandb_tune_pmd_linear(config=None):
         params["use_advantage"] = True
         params["normalize_obs"] = False
         params["normalize_rwd"] = False
-        params["n_iter"] = 20
+        params["dynamic_stepsize"] = False
+        params["n_iter"] = 100
         params["n_ep"] = 100
         params["mu_h"] = 10**params["mu_h"] if params["use_reg"] else 0.
         params["base_stepsize"] = 10**params["base_stepsize"]
         params["sgd_alpha"] = 10**params["sgd_alpha"]
         params["normalize_sa_val"] = True
+        params["max_grad_norm"] = -1
 
         n_trials = 10
         n_proc = mp.cpu_count()
