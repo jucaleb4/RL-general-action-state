@@ -53,6 +53,11 @@ class Rollout:
             self.cutoff = max(0, kwargs["cutoff"])
         assert self.cutoff > 0, "Monte-Carlo cutoff {self.cutoff} not positive"
 
+        self.use_gae = kwargs.get("use_gae", False)
+        self.gae_lambda = kwargs.get("gae_lambda", 1.)
+        if self.use_gae:
+            print(f"Running GAE with gae_lambda={self.gae_lambda}")
+
         # Process the environment's state and action space
         self.obs_space = env.observation_space
         self.action_space = env.action_space
@@ -137,7 +142,7 @@ class Rollout:
             if len(self.all_ep_cum_rwd) > 0:
                 i = min(25, len(self.all_ep_cum_rwd))
                 moving_avg = np.mean(self.all_ep_cum_rwd[-i:])
-            print(f"Ep {len(self.all_ep_cum_rwd)} reward: {self.curr_ep_cum_rwd:.2f} (25-moving avg: {moving_avg:.2f})")
+            print(f"Ep {len(self.all_ep_cum_rwd)} reward:{self.curr_ep_cum_rwd:.2f} len:{self.curr_ep_len} (25-moving avg: {moving_avg:.2f})")
             self.all_ep_cum_rwd.append(self.curr_ep_cum_rwd)
             self.all_ep_len.append(self.curr_ep_len)
             self.curr_ep_cum_rwd = 0
@@ -241,6 +246,13 @@ class Rollout:
         return (Q, Ind)
 
     def get_est_stateaction_value(self, last_pred_value=0, last_state_done=False):
+        if self.use_gae:
+            print("here")
+            return self.get_gae_stateaction_value(last_pred_value, last_state_done)
+        else:
+            return self.get_montecarlo_stateaction_value(last_pred_value, last_state_done)
+
+    def get_montecarlo_stateaction_value(self, last_pred_value, last_state_done):
         """
         Returns Q-function, advantage function with the corresponding
         state-action pairs
@@ -260,6 +272,35 @@ class Rollout:
             cum_rwd = self.r_batch[t] + self.gamma * cum_rwd
             q_est[t] = cum_rwd
             adv_est[t] = cum_rwd - self.v_batch[t]
+
+        s_visited = np.copy(self.s_batch[:self.time_ct])
+        a_visited = np.copy(self.a_batch[:self.time_ct])
+
+        return (q_est, adv_est, s_visited, a_visited)
+
+    def get_gae_stateaction_value(self, last_pred_value, last_state_done):
+        """
+        Returns Q-function, advantage function with the corresponding
+        state-action pairs
+
+        :param last_pred_value: estimated cost-to-go for last state in rollout 
+        :param last_state_terminated: last state terminated (not truncated)
+        """
+        q_est = np.zeros(self.time_ct, dtype=float)
+        adv_est = np.copy(q_est)
+        # if truncated, we already appended cost-to-go
+        # if termianted, not cost-to-go
+        last_gae_lam = 0
+        next_v = last_pred_value * (1-int(last_state_done))
+        for t in reversed(range(self.time_ct)):
+            # if we recieved done, reset last_gae_lam for new episode
+            if t < self.time_ct-1 and self.done_batch[t]:
+                last_gae_lam = 0
+            # also the advantage function
+            delta = self.r_batch[t] + self.gamma * next_v - self.v_batch[t]
+            last_gae_lam = delta + self.gamma * self.gae_lambda * last_gae_lam
+            adv_est[t] = last_gae_lam
+            q_est[t] = last_gae_lam + self.v_batch[t]
 
         s_visited = np.copy(self.s_batch[:self.time_ct])
         a_visited = np.copy(self.a_batch[:self.time_ct])

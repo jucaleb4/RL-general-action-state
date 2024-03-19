@@ -46,21 +46,31 @@ def main(alg, env_name, seed, settings, output={}):
     if settings.get("save_logs", False):
         fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
 
+    params = settings.copy()
+    params["verbose"] = False
+    params["fname"] = fname
+    """
     params = dict({
         "verbose": False,
         "fname": fname,
-        "c_h": settings["c_h"],
+        "mu_h": settings["mu_h"],
         "use_advantage": settings["use_advantage"],
         "gamma": settings["gamma"],
+        "gae_lambda": settings["gamma"],
         "stepsize": settings["stepsize"],
         "base_stepsize": settings["base_stepsize"],
         "rollout_len": settings["rollout_len"],
+        "max_ep_per_iter": settings["max_ep_per_iter"],
         "normalize_obs": settings["normalize_obs"],
+        "normalize_rwd": settings["normalize_rwd"],
+        "normalize_sa_val": settings["normalize_rwd"],
+        "max_grad_norm": settings["max_grad_norm"],
         "normalize_rwd": settings["normalize_rwd"],
         "sgd_alpha": settings["sgd_alpha"],
         "sgd_stepsize": settings["sgd_stepsize"],
         "sgd_n_iter": settings["sgd_n_iter"],
     })
+    """
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
         alg = PMDGeneralStateFiniteAction(env, params)
@@ -106,13 +116,20 @@ if __name__ == "__main__":
 
     parser.add_argument('--n_iter', type=int, default=100, help="Number of training iterations/episodes")
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
-    parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode")
+    parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")
+    parser.add_argument('--use_gae', action="store_true", help="Use generalized advantage function")
+    parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode. Rollout_len overwritten by max_ep_per_iter")
+    parser.add_argument('--max_ep_per_iter', default=-1, type=int, help="Max episodes per training epoch. If negative, then no max episode (uses rollout_len instead)")
+
     parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
     parser.add_argument('--base_stepsize', default=-1, type=float, help="base stepsize")
-    parser.add_argument('--c_h', default=0, type=float, help="entropy regularizations trength")
+    parser.add_argument('--mu_h', default=0, type=float, help="entropy regularizations trength")
     parser.add_argument('--normalize_obs', action="store_true", help="Normalize observations via warm-start")
     parser.add_argument('--normalize_rwd', action="store_true", help="Dynamically scale rewards")
+    parser.add_argument('--dynamic_stepsize', action="store_true", help="Dynamic scale stepsize by Q-estimate")
     parser.add_argument('--use_advantage', action="store_true", help="Use advantage function for policy update")
+    parser.add_argument('--normalize_sa_val', action="store_true", help="Normalize Q or advantage function")
+    parser.add_argument('--max_grad_norm', type=float, default=-1, help="Max l_inf norm of the gradient")
 
     parser.add_argument("--sgd_stepsize", default="constant", choices=["constant", "optimal"])
     parser.add_argument("--sgd_n_iter", type=int, default=10000, help="number of SGD iterations (e.g. 10-50x the rollout_len)")

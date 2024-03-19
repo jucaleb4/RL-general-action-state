@@ -8,11 +8,9 @@ import numpy.linalg as la
 
 import gymnasium as gym
 
-import sklearn.linear_model as sklm
-
 from rl import RLAlg
 from rl import Rollout
-from rl import FunctionApproximator
+from rl import LinearFunctionApproximator
 from rl.utils import vec_to_int
 from rl.utils import safe_normalize_row
 from rl.utils import rbf_kernel
@@ -22,7 +20,7 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 
-class PMD(RLAlg):
+class FOPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
         self.check_params()
@@ -39,7 +37,7 @@ class PMD(RLAlg):
             print(f"=== Start iteration {t} ===")
             self.t = t
 
-            self.params["eps_explore"] = 0.05 + 0.95 * 0.99**t
+            self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
 
             self.collect_rollouts()
 
@@ -70,6 +68,12 @@ class PMD(RLAlg):
         self.rollout.clear_batch()
 
         s = self._last_s
+
+        if self.params["max_ep_per_iter"] > 0:
+            max_num_resets = self.params["max_ep_per_iter"]  
+        else:
+            max_num_resets = np.inf
+        num_resets = 0
         for t in range(self.params["rollout_len"]): 
             v_s = self.estimate_value(s)
 
@@ -89,6 +93,11 @@ class PMD(RLAlg):
             if done:
                 s, _ = self.env.reset()
                 self._last_s = np.copy(s)
+                num_resets += 1
+                if num_resets == max_num_resets:
+                    self._last_pred_value = self.estimate_value(next_s)
+                    self._last_state_done = True
+                    break
 
     @abstractmethod
     def policy_evaluate(self):
@@ -109,30 +118,30 @@ class PMD(RLAlg):
         """
         raise NotImplemented
 
-    def get_stepsize_schedule(self):
-        eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
-        base_stepsize = self.params.get("base_stepsize", eta_0)
-        if base_stepsize <= 0:
-            base_stepsize = eta_0
-
-        if self.params.get("stepsize", "constant") == "constant":
-            return base_stepsize
-        if self.params["stepsize"] == "decreasing":
-            return base_stepsize * (self.t+1)**(-0.5)
-
-    def remap_obs(self, obs): 
-        """ 
-        Possibly remaps state (e.g., for Discrete environments, we want states
-        to start from index 0 -- while the environment can start from a
-        different index.
-        """
-        return obs
-
-    def remap_action(self, a): 
-        """ 
-        Same as `remap_obs`
-        """
-        return a
+    def get_stepsize_schedule(self, scale=1):
+        # no strong regularization
+        mu_h = self.params.get("mu_h", 0)
+        if mu_h == 0:
+            eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
+            base_stepsize = self.params.get("base_stepsize", eta_0)
+            if base_stepsize <= 0:
+                base_stepsize = eta_0
+            if self.params["dynamic_stepsize"]:
+                base_stepsize /= 2*scale
+            if self.params.get("stepsize", "constant") == "constant":
+                return base_stepsize
+            if self.params["stepsize"] == "decreasing":
+                return base_stepsize * float(self.t+1)**(-0.5)
+        else:
+            base_stepsize = self.params.get("base_stepsize", 1.)
+            if base_stepsize <= 0:
+                base_stepsize = eta_0
+            if self.params["dynamic_stepsize"]:
+                base_stepsize /= (2*scale + mu_h)
+            if self.params.get("stepsize", "constant") == "constant":
+                return base_stepsize
+            if self.params["stepsize"] == "decreasing":
+                return base_stepsize * float(self.t+1)**(-1)
 
     def env_warmup(self):
         return
@@ -163,7 +172,7 @@ class PMD(RLAlg):
             np.savetxt(fp, arr, fmt=fmt)
         print(f"Saved episode data to {self.params['fname']}")
 
-class PMDFiniteStateAction(PMD):
+class PMDFiniteStateAction(FOPO):
     def __init__(self, env, params):
         super().__init__(env, params)
 
@@ -273,17 +282,7 @@ class PMDFiniteStateAction(PMD):
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
 
-    def remap_obs(self, obs):
-        if isinstance(obs, np.ndarray):
-            return obs.flat[0]
-        return obs
-
-    def remap_action(self, action):
-        if isinstance(action, np.ndarray):
-            return action.flat[0]
-        return action
-
-class PMDGeneralStateFiniteAction(PMD):
+class PMDGeneralStateFiniteAction(FOPO):
     def __init__(self, env, params):
         super().__init__(env, params)
         self.check_PMDGeneralStateFiniteAction_params()
@@ -318,11 +317,13 @@ class PMDGeneralStateFiniteAction(PMD):
         self.env_warmup()
         (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
         X = s_visited
-        self.fa = FunctionApproximator(self.n_actions, X, params)
+        self.fa = LinearFunctionApproximator(self.n_actions, X, params)
         self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
         self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
         self.theta_accum = np.copy(self.last_thetas)
         self.intercept_accum = np.copy(self.last_intercepts)
+        self.last_max_q_est = ...
+        self.last_max_adv_est = ...
 
     def check_PMDGeneralStateFiniteAction_params(self):
         # TODO: Remove this is doing NN or SGD
@@ -334,9 +335,9 @@ class PMDGeneralStateFiniteAction(PMD):
             self.fa.set_coef(self.theta_accum[i], i)
             self.fa.set_intercept(self.intercept_accum[i], i)
             log_policy_at_s[i] = self.fa.predict(np.atleast_2d(s), i)
-        # TEMP
-        c_h = self.params.get("c_h", 0)
-        log_policy_at_s *= (c_h+1)**(-self.t)
+        # TEMP (more robust way to do regularization)
+        mu_h = self.params.get("mu_h", 0)
+        log_policy_at_s *= (mu_h+1)**(-self.t)
         policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
         policy_at_s = np.atleast_2d(policy_at_s)
 
@@ -382,8 +383,15 @@ class PMDGeneralStateFiniteAction(PMD):
             self._last_state_done,
         )
 
+        self.last_max_q_est = np.max(np.abs(q_est))
+        self.last_max_adv_est = np.max(np.abs(adv_est))
+
         X = s_visited
         y = adv_est if self.params["use_advantage"] else q_est
+
+        # TODO: Make this a setting
+        if self.params["normalize_sa_val"]:
+            y = (y - np.mean(y))/(np.std(y) + 1e-8)
 
         # print(f">>> last pred val: {self._last_pred_value} | done: {self._last_state_done}")
         # print(f"Rewards variance: {self.rwd_runstat.var}")
@@ -423,11 +431,22 @@ class PMDGeneralStateFiniteAction(PMD):
         # TEMP
         # self.theta_accum += self.get_stepsize_schedule()*self.last_thetas
         # self.intercept_accum += self.get_stepsize_schedule()*self.last_intercepts
-        c_h = self.params.get("c_h", 0)
-        alpha = (c_h + self.get_stepsize_schedule()**(-1))**-1
-        alpha *= (c_h+1)**self.t
-        self.theta_accum += alpha * self.last_thetas
-        self.intercept_accum += alpha * self.last_intercepts
+        mu_h = self.params.get("mu_h", 0)
+        scale = self.last_max_adv_est if self.params["use_advantage"] else self.last_max_q_est
+        alpha = (mu_h + self.get_stepsize_schedule(scale)**(-1))**-1
+        alpha *= (mu_h+1)**self.t
+
+        max_grad_norm = float(self.params["max_grad_norm"])
+        inf_norms_theta = np.max(np.abs(self.last_thetas), axis=1)
+        inf_norms_int = np.abs(self.last_intercepts)
+        inf_norms = np.maximum(inf_norms_theta, inf_norms_int)
+        if max_grad_norm > 0:
+            clip_coef = np.clip(np.divide(max_grad_norm, inf_norms), a_min=0, a_max=1.)
+        else:
+            clip_coef = np.ones(len(inf_norms))
+
+        self.theta_accum += alpha * np.diag(clip_coef)@self.last_thetas
+        self.intercept_accum += alpha * np.diag(clip_coef)@self.last_intercepts
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -442,25 +461,18 @@ class PMDGeneralStateFiniteAction(PMD):
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
 
-    def remap_obs(self, obs):
-        if isinstance(obs, np.ndarray):
-            return obs.flat[0]
-        return obs
-
-    def remap_action(self, action):
-        if isinstance(action, np.ndarray):
-            return action.flat[0]
-        return action
-
     def env_warmup(self):
         """ 
         Runs the environment for a fixed number of iterations estimate
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["rollout_len"]
+        # old_max_ep_per_iter = self.params["max_ep_per_iter"]
         self.rollout_len = max(1000, self.n_actions*100)
+        # self.params["max_ep_per_iter"] = -1
         self.collect_rollouts()
         self.rollout_len = old_rollout_len
+        # self.params["max_ep_per_iter"] = old_max_ep_per_iter
 
         # TODO: Can we delete these?
         # self.obs_runstat.update()
@@ -498,6 +510,5 @@ class PMDGeneralStateFiniteAction(PMD):
             self.fa.set_intercept(self.last_intercepts[i], i)
             q_s.append(self.fa.predict(np.atleast_2d(s), i))
         return np.dot(q_s, self._get_policy(s))
-
 
 # class PMDGeneralStateAction(PMD):
