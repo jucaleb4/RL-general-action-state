@@ -22,9 +22,9 @@ def get_wandb_tuning_sweep_id():
             'min': -4,
             'max': 0,
         },
-        "use_reg" {
+        "use_reg": {
             'values': [True, False],
-        }
+        },
         'gamma': {  # a flat distribution between 0 and 0.1
             'distribution': 'uniform',
             'min': 0.9,
