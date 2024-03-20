@@ -1,6 +1,8 @@
 from abc import ABC
 from abc import abstractmethod
 
+import warnings
+
 import numpy as np
 
 import sklearn.pipeline
@@ -155,13 +157,13 @@ class NeuralNetwork(nn.Module):
         )
 
     def forward(self, x):
-        if len(x.shape) > 1:
-            x = self.flatten(x)
+        # if len(x.shape) > 1:
+        #     x = torch.flatten(x)
         logits = self.linear_relu_stack(x)
         return logits
 
 class NNFunctionApproximator(FunctionApproximator):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, **kwargs):
         super().__init__()
 
         self.input_dim = input_dim
@@ -178,10 +180,12 @@ class NNFunctionApproximator(FunctionApproximator):
         self.loss_fn = nn.MSELoss()
         self.optimizer = torch.optim.SGD(
             self.model.parameters(), 
-            lr=1e-3,
+            lr=1e-4,
             # momentum=5e-1
         )
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+
+        self.max_grad_norm = max(1e-10, kwargs.get("max_grad_norm", np.inf))
 
     def predict(self, X, i=0):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
@@ -192,33 +196,73 @@ class NNFunctionApproximator(FunctionApproximator):
             for i,X_i in enumerate(X):
                 X_i = torch.from_numpy(X_i).to(self.device).float()
                 y_pred = self.model(X_i)
-                y.append(y_pred.numpy())
+                # https://stackoverflow.com/questions/55466298/pytorch-cant-call-numpy-on-variable-that-requires-grad-use-var-detach-num
+                # y.append(y_pred.numpy())
+                y.append(y_pred.detach().numpy())
 
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0):
-        # Training mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.train)
-        # TODO: Allow shuffling and mini-batch and tuning
+    def update(self, X, y, i=0, batch_size=32, n_epochs=10):
+        try:
+            X = np.array(X)
+            y = np.array(y)
+        except Exception:
+            raise RuntimeError("Inputs X,y are not list or numpy arrays")
+        if len(X) != len(y):
+            raise RuntimeError("len(X) does not match len(y)")
+        if batch_size < 1:
+            warnings.warn("Batch size not positive, setting to 1")
+            batch_size = 1
+        if n_epochs < 1:
+            warnings.warn("n_epochs not positive, setting to 1")
+            n_epochs = 1
+
+        batch_size = min(len(X), batch_size)
+
+        training_set = list(zip(X,y))
+        training_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True)
+
+        # TODO: Cross-validation
+        # validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=4, shuffle=False)
+
         self.model.train()
+        for epoch_i in range(n_epochs):
+            self._train_one_epoch(training_loader, epoch_i)
 
-        # split into batches...
-        for batch, (X_i, y_i) in enumerate(zip(X,y)):
-            X_i = torch.from_numpy(X_i).to(self.device).float()
-            y_i = torch.from_numpy(y_i).to(self.device).float()
+    def _train_one_epoch(self, training_loader, epoch_idx):
+        running_loss = 0.
+        last_loss = 0.
 
-            # Compute prediction error
-            pred = self.model(X_i)
-            loss = self.loss_fn(pred, y_i)
+        for i, data in enumerate(training_loader):
+            X_i, y_i = data
 
-            # Backpropagation
-            loss.backward()
-            self.optimizer.step()
+            # https://discuss.pytorch.org/t/runtimeerror-mat1-and-mat2-must-have-the-same-dtype/166759
+            X_i = X_i.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
+            y_i = y_i.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
+
+            # Zero your gradients for every batch!
             self.optimizer.zero_grad()
 
-            if batch % 100 == 0:
-                loss, current = loss.item(), (batch + 1) * len(X)
-                # TODO: Save loss...
+            pred_i = self.model(X_i)
+            loss = self.loss_fn(pred_i, y_i)
+            loss.backward()
+
+            if self.max_grad_norm < np.inf:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+
+            self.optimizer.step()
+
+            # Gather data and report
+            running_loss += loss.item()
+            if i % 1000 == 999:
+                last_loss = running_loss / 1000 # loss per batch
+                print('  batch {} loss: {}'.format(i + 1, last_loss))
+                tb_x = epoch_index * len(training_loader) + i + 1
+                tb_writer.add_scalar('Loss/train', last_loss, tb_x)
+                running_loss = 0.
+
+        return last_loss
 
     def grad(self, X):
         """ 
@@ -234,7 +278,7 @@ class NNFunctionApproximator(FunctionApproximator):
             y_i.backward(torch.ones_like(y_i)) 
             grad_X.append(X_i.grad.numpy())
 
-        return np.array(grad_X)
+        return np.squeeze(np.array(grad_X))
 
     def save_model(self):
         raise NotImplemented
