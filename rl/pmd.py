@@ -37,6 +37,7 @@ class FOPO(RLAlg):
 
     def _learn(self, n_iter):
         """ Runs PMD algorithm for `n_iter`s """
+        checkpoint = np.linspace(0, n_iter, num=10, dtype=int)
         for t in range(n_iter):
             print(f"=== Start iteration {t} ===")
             self.t = t
@@ -59,8 +60,10 @@ class FOPO(RLAlg):
 
             # print(f"Final policy:\n{self.policy}")
             # save every episode
-            self.save_episode_reward_and_len()
+            if t in checkpoint:
+                self.save_episode_reward_and_len()
 
+        self.save_episode_reward_and_len()
         # return moving average reward
         ep_cum_rwds = self.rollout.get_episode_rewards()
         t = min(25, len(ep_cum_rwds))
@@ -402,7 +405,8 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         # TODO: Make this a setting
         if self.params["normalize_sa_val"]:
-            # y = (y - np.mean(y))/(np.std(y) + 1e-8)
+            y = (y - np.mean(y))/(np.std(y) + 1e-8)
+        """
             perm_idxs = self.rng.permutation(len(y))
             X = X[perm_idxs]
             y = y[perm_idxs]
@@ -412,6 +416,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 y[_idxs] = (y[_idxs] - np.mean(y[_idxs]))/(np.std(y[_idxs]) + 1e-8)
             i = (int(len(y)/batch_size)-1) * batch_size
             y[i:] = (y[i:] - np.mean(y[i:]))/(np.std(y[i:]) + 1e-8)
+        """
 
         # print(f">>> last pred val: {self._last_pred_value} | done: {self._last_state_done}")
         # print(f"Rewards variance: {self.rwd_runstat.var}")
