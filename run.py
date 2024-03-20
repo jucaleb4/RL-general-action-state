@@ -50,6 +50,7 @@ def main(alg, env_name, seed, settings, output={}):
     params = settings.copy()
     params["verbose"] = False
     params["fname"] = fname
+    print(params)
     """
     params = dict({
         "verbose": False,
@@ -75,7 +76,7 @@ def main(alg, env_name, seed, settings, output={}):
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
         alg = PMDGeneralStateFiniteAction(env, params)
-    if alg == "pda":
+    elif alg == "pda":
         alg = PDAGeneralStateAction(env, params)
     elif alg == "qlearn":
         alg = QLearn(env, params)
@@ -151,14 +152,14 @@ if __name__ == "__main__":
     parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")
 
     args = parser.parse_args()
+    settings = vars(args)
+    if len(args.settings_file) > 6 and args.settings_file[-4:] == "json":
+        with open(args.settings_file, "r") as fp:
+            new_settings = json.load(fp)
+        settings.update(new_settings)
 
     if args.parallel:
-        settings = vars(args)
-        if len(args.settings_file) > 6 and args.settings_file[-4:] == "json":
-            with open(args.settings_file, "r") as fp:
-                new_settings = json.load(fp)
-            settings.update(new_settings)
         run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
     else:
         # no seeding yet
-        main(args.alg, args.env_name, args.seed, vars(args))
+        main(args.alg, args.env_name, args.seed, settings)
