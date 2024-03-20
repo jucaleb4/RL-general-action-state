@@ -245,6 +245,8 @@ class NNFunctionApproximator(FunctionApproximator):
             self.optimizer.zero_grad()
 
             pred_i = self.model(X_i)
+            # TODO: Is this the right way to do it?
+            pred_i = torch.squeeze(pred_i)
             loss = self.loss_fn(pred_i, y_i)
             loss.backward()
 
@@ -264,7 +266,7 @@ class NNFunctionApproximator(FunctionApproximator):
 
         return last_loss
 
-    def grad(self, X):
+    def grad(self, X, max_grad_norm=np.inf):
         """ 
         https://discuss.pytorch.org/t/newbie-getting-the-gradient-with-respect-to-the-input/12709/6
         """
@@ -278,7 +280,12 @@ class NNFunctionApproximator(FunctionApproximator):
             y_i.backward(torch.ones_like(y_i)) 
             grad_X.append(X_i.grad.numpy())
 
-        return np.squeeze(np.array(grad_X))
+        grad_X = np.squeeze(np.array(grad_X))
+        scale = 1
+        if  max_grad_norm < np.inf:
+            grad_norm = np.max(np.abs(grad_X))
+            scale = max(1, max_grad_norm/(grad_norm+1e-10))
+        return scale * grad_X
 
     def save_model(self):
         raise NotImplemented

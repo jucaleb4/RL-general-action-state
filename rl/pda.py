@@ -81,7 +81,8 @@ class PDAGeneralStateAction(FOPO):
         else:
             if self.params["stepsize"] == "decreasing":
                 return (self.t+1, (self.t+1)*abs(self.mu_d))
-            return (self.t+1, self.n_iter*(self.n_iter+1)*abs(self.mu_d))
+            n_iter = self.params["n_iter"]
+            return (self.t+1, n_iter*(n_iter+1)*abs(self.mu_d))
         return (0,0)
 
     def policy_sample(self, s):
@@ -89,41 +90,66 @@ class PDAGeneralStateAction(FOPO):
         if not self.updated_at_least_once:
             return self.pi_0
 
-        s_diff = la.norm(self._last_s - s)
-        warm_start = (not self.just_updated_policy) and self.rng.random() >= 5e-2 # and s_diff <= 1.
-        self.just_updated_policy = False
+        s_ = np.copy(s)
+        warm_start = True
         raised_mu_Q = False
+        if self.just_updated_policy or self.rng.random() <= 5e-3:
+            # s_diff = la.norm(self._last_s - s)
+            warm_start = False
+
+            # guess the size of the gradient of NN wrt a
+            df = lambda a : -self.fa_Q_acc_k.grad(np.atleast_2d(np.append(s_, a)))[len(s):] 
+            m = 32
+            df_norm_arr = np.zeros(m, dtype=float)
+            for i in range(m):
+                a = self.env.action_space.sample()
+                df_norm_arr[i] = la.norm(df(a))
+            est_Q_grad_norm = np.mean(df_norm_arr) + 2*np.std(df_norm_arr) 
+            self.scale = min(1, 1./est_Q_grad_norm)
+
+            self.just_updated_policy = False
+            self._first_eta = -1
+
+        # TODO: How to automate this?
+        a_0 = self._last_a if warm_start else self.pi_0
 
         while 1:
             (_, lam_t) = self.get_stepsize_schedule()
 
-            # TODO: How to automate this?
-            a_0 = self._last_a if warm_start else self.pi_0
+            scale = -(lam_t/(self.beta_sum))**(-1) * self.scale
+
             # TODO: Add regularization
-            s_ = np.copy(s)
-            f = lambda a : -self.fa_Q_k.predict(np.atleast_2d(np.append(s_, a)))  \
-                        + (lam_t/(2*self.beta_sum))*la.norm(a-self.pi_0)**2
-            df = lambda a : -self.fa_Q_k.grad(np.atleast_2d(np.append(s_, a)))[len(s):]  \
-                        + (lam_t/self.beta_sum)*(a-self.pi_0)
+            f = lambda a : scale * self.fa_Q_acc_k.predict(np.atleast_2d(np.append(s_, a)))  \
+                        + 0.5*la.norm(a-self.pi_0)**2
+            df = lambda a : scale * self.fa_Q_acc_k.grad(np.atleast_2d(np.append(s_, a)))[len(s):]  \
+                        + (a-self.pi_0)
             oracle = BlackBox(f, df)
 
-            # TODO: Make this adaptive to the gradient
-            stop_nonconvex = abs(self.mu_d) <= 1e2
-            opt = ACFastGradDescent(oracle, a_0, alpha=0.0, tol=1e-3, stop_nonconvex=stop_nonconvex)
+            # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
+            stop_nonconvex = True
+            opt = ACFastGradDescent(
+                oracle, 
+                a_0, 
+                alpha=0.0, 
+                tol=1e-3, 
+                stop_nonconvex=stop_nonconvex,
+                first_eta=self._first_eta
+            )
 
-            n_iter = 2 if warm_start else 20_000
+            n_iter = 5 if warm_start else 1_000
 
             a_hat, _ = opt.solve(n_iter=n_iter)
+            self._first_eta = opt.first_eta
 
             self._last_a = np.copy(a_hat)
 
             if stop_nonconvex and opt.detected_nonconvex:
                 old_mu_d = self.mu_d
-                self.mu_Q = float(max(1, self.mu_Q*2))
+                self.mu_Q = 2*self.mu_Q if self.mu_Q > 0 else min(1, scale**2)
                 raised_mu_Q = True
                 self.mu_d = self.params["mu_h"] - self.mu_Q
-                if abs(self.mu_d) >= 1e12:
-                    raise RuntimeError("weak convexity too small, consider changing problem or solver")
+                # if abs(self.mu_d) >= 1e12:
+                #     raise RuntimeError("weak convexity too small, consider changing problem or solver")
             else:
                 if raised_mu_Q:
                     print(f"Detected nonconvexity, set mu_d={self.mu_d:.2e}")
@@ -151,9 +177,12 @@ class PDAGeneralStateAction(FOPO):
         )
 
         X = np.hstack((s_visited, a_visited))
-        y = adv_est if self.params["use_advantage"] else q_est
-
         self._last_sa_visited = np.copy(X)
+
+        y = adv_est if self.params["use_advantage"] else q_est
+        if self.params.get("normalize_sa_val", False):
+            y = (y-np.mean(y))/(np.std(y)+1e-8)
+
         self.fa_Q_k.update(X, y)
 
     def policy_update(self): 

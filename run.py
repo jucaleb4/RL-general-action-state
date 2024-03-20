@@ -117,7 +117,8 @@ if __name__ == "__main__":
         "LunarLander-v2", 
         "MountainCar-v0", 
         "Pendulum-v1",
-        "Humanoid-v4"
+        "Humanoid-v4",
+        "HalfCheetah-v4"
         ],
         help="Environment"
     )

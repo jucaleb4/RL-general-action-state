@@ -48,7 +48,7 @@ class Rollout:
                 self.cutoff = 100
             else:
                 self.cutoff = int(1+1./(1-self.gamma))
-            warnings.warn(f"No cutoff specified, setting to {self.cutoff}")
+            # warnings.warn(f"No cutoff specified, setting to {self.cutoff}")
         else:
             self.cutoff = max(0, kwargs["cutoff"])
         assert self.cutoff > 0, "Monte-Carlo cutoff {self.cutoff} not positive"
