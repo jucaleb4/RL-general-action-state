@@ -26,6 +26,7 @@ class FOPO(RLAlg):
         self.check_params()
 
         # initialize
+        self.t = 0
         self._last_s, _ = env.reset()
 
         self.rollout = Rollout(env, **params)
@@ -400,7 +401,16 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         # TODO: Make this a setting
         if self.params["normalize_sa_val"]:
-            y = (y - np.mean(y))/(np.std(y) + 1e-8)
+            # y = (y - np.mean(y))/(np.std(y) + 1e-8)
+            perm_idxs = self.rng.permutation(len(y))
+            X = X[perm_idxs]
+            y = y[perm_idxs]
+            batch_size = 32
+            for i in range(int(len(y)/batch_size)-1):
+                _idxs = np.arange(i*batch_size,(i+1)*batch_size)
+                y[_idxs] = (y[_idxs] - np.mean(y[_idxs]))/(np.std(y[_idxs]) + 1e-8)
+            i = (int(len(y)/batch_size)-1) * batch_size
+            y[i:] = (y[i:] - np.mean(y[i:]))/(np.std(y[i:]) + 1e-8)
 
         # print(f">>> last pred val: {self._last_pred_value} | done: {self._last_state_done}")
         # print(f"Rewards variance: {self.rwd_runstat.var}")

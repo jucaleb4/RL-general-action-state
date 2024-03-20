@@ -17,6 +17,7 @@ import gym_examples
 
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
+from rl import PDAGeneralStateAction
 from rl import QLearn
 from rl import PPO
 
@@ -74,6 +75,8 @@ def main(alg, env_name, seed, settings, output={}):
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
         alg = PMDGeneralStateFiniteAction(env, params)
+    if alg == "pda":
+        alg = PDAGeneralStateAction(env, params)
     elif alg == "qlearn":
         alg = QLearn(env, params)
     elif alg == "ppo":
@@ -108,8 +111,15 @@ if __name__ == "__main__":
         description='RL algorithms',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--alg', default="pmd", choices=["qlearn", "pmd", "ppo"], help="Algorithm")
-    parser.add_argument('--env_name', default="LunarLander-v2", choices=["LunarLander-v2", "MountainCar-v0"], help="Environment")
+    parser.add_argument('--alg', default="pmd", choices=["pmd", "pda", "qlearn", "ppo"], help="Algorithm")
+    parser.add_argument('--env_name', default="LunarLander-v2", choices=[
+        "LunarLander-v2", 
+        "MountainCar-v0", 
+        "Pendulum-v1",
+        "Humanoid-v4"
+        ],
+        help="Environment"
+    )
     parser.add_argument('--save_logs', action="store_true", help="Store logs to file")
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
     parser.add_argument('--settings_file', type=str, default="", help="Load settings")
