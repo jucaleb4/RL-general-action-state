@@ -56,8 +56,9 @@ class FOPO(RLAlg):
             # print(f"[{self.t}] mean episode rwd={np.mean(self.rollout.get_episode_rewards()):.1f}")
             # print(f"[{self.t}] mean(V)={mean_perf}")
 
-        # print(f"Final policy:\n{self.policy}")
-        self.save_episode_reward_and_len()
+            # print(f"Final policy:\n{self.policy}")
+            # save every episode
+            self.save_episode_reward_and_len()
 
         # return moving average reward
         ep_cum_rwds = self.rollout.get_episode_rewards()
