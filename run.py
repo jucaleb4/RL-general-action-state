@@ -50,7 +50,6 @@ def main(alg, env_name, seed, settings, output={}):
     params = settings.copy()
     params["verbose"] = False
     params["fname"] = fname
-    print(params)
     """
     params = dict({
         "verbose": False,
@@ -85,7 +84,7 @@ def main(alg, env_name, seed, settings, output={}):
     else:
         return 
 
-    output[seed] = alg.learn(n_iter=settings["n_iter"])
+    output[seed] = alg.learn(settings["max_iter"])
 
 def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
     num_exp = num_end - num_start
@@ -126,8 +125,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
     parser.add_argument('--settings_file', type=str, default="", help="Load settings")
 
-    parser.add_argument('--n_iter', type=int, default=100, help="Max number of training iterations")
-    parser.add_argument('--n_ep', type=int, default=-1, help="Max number of training episodes")
+    parser.add_argument('--max_iter', type=int, default=100, help="Max number of training iterations")
+    parser.add_argument('--max_ep', type=int, default=-1, help="Max number of training episodes")
 
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")
@@ -146,7 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_grad_norm', type=float, default=-1, help="Max l_inf norm of the gradient")
 
     parser.add_argument("--sgd_stepsize", default="constant", choices=["constant", "optimal"])
-    parser.add_argument("--sgd_n_iter", type=int, default=10000, help="number of SGD iterations (e.g. 10-50x the rollout_len)")
+    parser.add_argument("--sgd_n_iter", type=int, default=1_000, help="number of SGD iterations (e.g. 10-50x the rollout_len)")
     parser.add_argument("--sgd_alpha", type=float, default=0.0001, help="Regularization strength")
 
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")

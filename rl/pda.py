@@ -55,15 +55,16 @@ class PDAGeneralStateAction(FOPO):
         self.mu_d = params["mu_h"] - self.mu_Q
         self.prev_beta_sum = 0
         self.beta_sum = 0
+        self.sampling_grad = []
 
         # uniform policy and function approximation
         self.env_warmup()
         (_, _, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         sa_dim = self.obs_dim+self.action_dim
         # This is for Q^k_{[k]}
-        self.fa_Q_acc_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=1.)
+        self.fa_Q_acc_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=-1)
         # This is for Q(\pi_k)
-        self.fa_Q_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=1.)
+        self.fa_Q_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=-1)
         # initial action is all zeros
 
     def check_PDAGeneralStateAction_params(self):
@@ -93,7 +94,11 @@ class PDAGeneralStateAction(FOPO):
         s_ = np.copy(s)
         warm_start = True
         raised_mu_Q = False
-        if self.just_updated_policy or self.rng.random() <= 5e-3:
+        if self.just_updated_policy:
+            self.sampling_grad = []
+            self.mu_Q = 0.
+            self.mu_d = self.params["mu_h"]
+
             # s_diff = la.norm(self._last_s - s)
             warm_start = False
 
@@ -136,10 +141,11 @@ class PDAGeneralStateAction(FOPO):
                 first_eta=self._first_eta
             )
 
-            n_iter = 5 if warm_start else 1_000
+            n_iter = 1_000 if warm_start else 50_000
 
-            a_hat, _ = opt.solve(n_iter=n_iter)
+            a_hat, _, grad_hist = opt.solve(n_iter=n_iter)
             self._first_eta = opt.first_eta
+            self.sampling_grad.append(grad_hist[-1])
 
             self._last_a = np.copy(a_hat)
 
@@ -152,7 +158,8 @@ class PDAGeneralStateAction(FOPO):
                 #     raise RuntimeError("weak convexity too small, consider changing problem or solver")
             else:
                 if raised_mu_Q:
-                    print(f"Detected nonconvexity, set mu_d={self.mu_d:.2e}")
+                    pass
+                    # print(f"Detected nonconvexity, set mu_d={self.mu_d:.2e}")
                 break
 
         return a_hat
@@ -183,7 +190,7 @@ class PDAGeneralStateAction(FOPO):
         if self.params.get("normalize_sa_val", False):
             y = (y-np.mean(y))/(np.std(y)+1e-8)
 
-        self.fa_Q_k.update(X, y)
+        self.last_pe_loss = self.fa_Q_k.update(X, y)
 
     def policy_update(self): 
         self.updated_at_least_once = True
@@ -197,8 +204,6 @@ class PDAGeneralStateAction(FOPO):
 
         """
         self.just_updated_policy = True
-        self.mu_Q = 0.
-        self.mu_d = self.params["mu_h"]
 
         (beta_t, _) = self.get_stepsize_schedule()
         self.prev_beta_sum = self.beta_sum
@@ -209,10 +214,10 @@ class PDAGeneralStateAction(FOPO):
         # iterate over samples we used to estimate the last Q_{\pi_k}
         Q_acc_k_pred = self.fa_Q_acc_k.predict(X)
         Q_k_pred     = self.fa_Q_k.predict(X)
-        y = (self.beta_sum)**(-1)*(self.prev_beta_sum*Q_acc_k_pred + Q_k_pred)
+        y = (self.beta_sum)**(-1)*(self.prev_beta_sum*Q_acc_k_pred + beta_t*Q_k_pred)
 
         # approximately solve apolicy update
-        self.fa_Q_acc_k.update(X,y)
+        self.last_po_loss = self.fa_Q_acc_k.update(X,y)
 
     def policy_performance(self) -> float: 
         """ Uses policy estimation from `policy_evaluate()` and updates new policy (can
@@ -270,3 +275,13 @@ class PDAGeneralStateAction(FOPO):
         v_s = self.fa_Q_k.predict(np.atleast_2d(np.append(s, pi_k_s)))
 
         return v_s
+
+    def prepare_log(self):
+        l = 15
+        super().prepare_log()
+        self.msg += "train/\n"
+        self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
+        self.msg += f"  {'po_loss':<{l}}: {self.last_po_loss:.4e}\n"
+        self.msg += f"  {'sampl_grad_mean':<{l}}: {np.mean(self.sampling_grad):.4e}\n"
+        self.msg += f"  {'sampl_grad_std':<{l}}: {np.std(self.sampling_grad):.4e}\n"
+        self.msg += f"  {'mu_d':<{l}}: {self.mu_d:.4e}\n"

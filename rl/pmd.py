@@ -2,6 +2,7 @@
 from abc import abstractmethod
 
 import warnings 
+import time
 
 import numpy as np
 import numpy.linalg as la
@@ -32,40 +33,39 @@ class FOPO(RLAlg):
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
 
-        self.ep_ct = 0
-        self.n_ep = params["n_ep"] if params["n_ep"] > 0 else np.inf
+        self.n_ep = 0
+        self.n_step = 0
+        self.last_iter_ep = 0
+        self.max_ep = params["max_ep"] if params["max_ep"] > 0 else np.inf
 
-    def _learn(self, n_iter):
-        """ Runs PMD algorithm for `n_iter`s """
-        checkpoint = np.linspace(0, n_iter, num=10, dtype=int)
-        for t in range(n_iter):
-            print(f"=== Start iteration {t} ===")
+    def _learn(self, max_iter):
+        """ Runs PMD algorithm for `max_iter`s """
+        checkpoint = np.linspace(0, max_iter, num=10, dtype=int)
+        self.s_time = time.time()
+
+        for t in range(max_iter):
             self.t = t
 
             self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
 
             self.collect_rollouts()
 
-            if self.ep_ct == self.n_ep:
+            if self.n_ep == self.max_ep:
                 break
 
             self.policy_evaluate()
 
             self.policy_update()
 
-            mean_perf = self.policy_performance()
-            # print(f"[{self.t}] mean episode len={np.mean(self.rollout.get_episode_lens()):.1f}")
-            # print(f"[{self.t}] mean episode rwd={np.mean(self.rollout.get_episode_rewards()):.1f}")
-            # print(f"[{self.t}] mean(V)={mean_perf}")
+            self.prepare_log()
+            self.dump_log()
 
-            # print(f"Final policy:\n{self.policy}")
-            # save every episode
             if t in checkpoint:
                 self.save_episode_reward_and_len()
 
         self.save_episode_reward_and_len()
         # return moving average reward
-        ep_cum_rwds = self.rollout.get_episode_rewards()
+        ep_cum_rwds = self.rollout.get_ep_rwds()
         t = min(25, len(ep_cum_rwds))
         return np.mean(ep_cum_rwds[-t:])
 
@@ -101,9 +101,10 @@ class FOPO(RLAlg):
             done = term or trunc
             self.rollout.add_step_data(s, a, r, done, v_s, r_raw=r_raw)
             s = next_s
+            self.n_step += 1
             if done:
-                self.ep_ct += 1
-                if self.ep_ct == self.n_ep:
+                self.n_ep += 1
+                if self.n_ep == self.max_ep:
                     return 
                 s, _ = self.env.reset()
                 self._last_s = np.copy(s)
@@ -132,7 +133,7 @@ class FOPO(RLAlg):
         """
         raise NotImplemented
 
-    def get_stepsize_schedule(self, scale=1):
+    def get_stepsize_schedule(self):
         # no strong regularization
         mu_h = self.params.get("mu_h", 0)
         if mu_h == 0:
@@ -140,22 +141,23 @@ class FOPO(RLAlg):
             base_stepsize = self.params.get("base_stepsize", eta_0)
             if base_stepsize <= 0:
                 base_stepsize = eta_0
-            if self.params["dynamic_stepsize"]:
-                base_stepsize /= 2*scale
             if self.params.get("stepsize", "constant") == "constant":
                 return base_stepsize
             if self.params["stepsize"] == "decreasing":
                 return base_stepsize * float(self.t+1)**(-0.5)
         else:
-            base_stepsize = self.params.get("base_stepsize", 1.)
-            if base_stepsize <= 0:
-                base_stepsize = 1.
-            if self.params["dynamic_stepsize"]:
-                base_stepsize /= (2*scale + mu_h)
-            if self.params.get("stepsize", "constant") == "constant":
-                return base_stepsize
-            if self.params["stepsize"] == "decreasing":
-                return base_stepsize * float(self.t+1)**(-1)
+            # base_stepsize = self.params.get("base_stepsize", 1.)
+            # if base_stepsize <= 0:
+            #     base_stepsize = 1.
+            # if self.params["dynamic_stepsize"]:
+            #     base_stepsize /= (2*scale + mu_h)
+            # if self.params.get("stepsize", "constant") == "constant":
+            #     return base_stepsize
+            # if self.params["stepsize"] == "decreasing":
+            #     return base_stepsize * float(self.t+1)**(-1)
+            base_stepsize = (mu_h * self.t+1)**(-1)
+            stepsize = (mu_h + base_stepsize)**(-1)
+            stepsize *= (mu_h+1)**(self.t+1)
 
     def env_warmup(self):
         return
@@ -172,9 +174,40 @@ class FOPO(RLAlg):
     def estimate_value(self, s):
         raise NotImplemented
 
+    def prepare_log(self):
+        l = 15
+        self.msg = "-"*30 + "\n"
+
+        rwd_arr = self.rollout.get_ep_rwds()
+        len_arr = self.rollout.get_ep_lens()
+        rwd_arr_trunc = rwd_arr[self.last_iter_ep: self.n_ep]
+        len_arr_trunc = len_arr[self.last_iter_ep: self.n_ep]
+        i = min(25, len(rwd_arr))
+        moving_avg = np.mean(rwd_arr[-i:])
+
+
+        self.msg += "rollout/\n"
+        self.msg += f"  {'itr_ep_len_mean':<{l}}: {np.mean(len_arr_trunc):.2f}\n"
+        self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
+        self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_ep-self.last_iter_ep)}\n"
+        self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
+
+        self.msg += "time/\n"
+        self.msg += f"  {'itr':<{l}}: {self.t}\n"
+        self.msg += f"  {'time_elap':<{l}}: {time.time()-self.s_time:.2f}\n"
+        self.msg += f"  {'tot_steps':<{l}}: {self.n_step}\n"
+        self.msg += f"  {'tot_ep':<{l}}: {self.n_ep}\n"
+
+        self.last_iter_ep = self.n_ep
+
+    def dump_log(self):
+        self.msg += "-"*30 + "\n"
+        print(self.msg, end="")
+        self.msg = ""
+
     def save_episode_reward_and_len(self):
-        rwd_arr = self.rollout.get_episode_rewards()
-        len_arr = self.rollout.get_episode_lens()
+        rwd_arr = self.rollout.get_ep_rwds()
+        len_arr = self.rollout.get_ep_lens()
 
         if len(self.params.get("fname", "")) == 0:
             warnings.warn("No filename given, not saving")
@@ -336,6 +369,9 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
         self.theta_accum = np.copy(self.last_thetas)
         self.intercept_accum = np.copy(self.last_intercepts)
+        self.last_theta_accum = np.copy(self.theta_accum)
+        self.last_intercept_accum = np.copy(self.intercept_accum)
+
         self.last_max_q_est = ...
         self.last_max_adv_est = ...
 
@@ -406,35 +442,22 @@ class PMDGeneralStateFiniteAction(FOPO):
         # TODO: Make this a setting
         if self.params["normalize_sa_val"]:
             y = (y - np.mean(y))/(np.std(y) + 1e-8)
-        """
-            perm_idxs = self.rng.permutation(len(y))
-            X = X[perm_idxs]
-            y = y[perm_idxs]
-            batch_size = 32
-            for i in range(int(len(y)/batch_size)-1):
-                _idxs = np.arange(i*batch_size,(i+1)*batch_size)
-                y[_idxs] = (y[_idxs] - np.mean(y[_idxs]))/(np.std(y[_idxs]) + 1e-8)
-            i = (int(len(y)/batch_size)-1) * batch_size
-            y[i:] = (y[i:] - np.mean(y[i:]))/(np.std(y[i:]) + 1e-8)
-        """
-
-        # print(f">>> last pred val: {self._last_pred_value} | done: {self._last_state_done}")
-        # print(f"Rewards variance: {self.rwd_runstat.var}")
-        # print(f"Some y's: {y[:10]} and {y[-10:]}")
 
         # extract fitted parameters
         not_visited_actions = []
+        loss = 0.
         for i in range(self.n_actions):
             action_i_idx = np.where(a_visited==i)[0]
             if len(action_i_idx) == 0:
                 not_visited_actions.append(i)
                 continue
-            self.fa.update(X[action_i_idx], y[action_i_idx], i)
+            loss += self.fa.update(X[action_i_idx], y[action_i_idx], i)
             self.last_thetas[i] = np.copy(self.fa.get_coef(i))
             self.last_intercepts[i] = np.copy(self.fa.get_intercept(i))
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
-        # print(f"mag={np.max(np.abs(self.last_thetas))}, mean={np.mean(self.last_thetas)}, std={np.std(self.last_thetas)}")
+
+        self.last_pe_loss = loss/self.n_actions
 
     def ctd_Q(self):
         raise NotImplemented
@@ -456,10 +479,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         # TEMP
         # self.theta_accum += self.get_stepsize_schedule()*self.last_thetas
         # self.intercept_accum += self.get_stepsize_schedule()*self.last_intercepts
-        mu_h = self.params.get("mu_h", 0)
-        scale = self.last_max_adv_est if self.params["use_advantage"] else self.last_max_q_est
-        alpha = (mu_h + self.get_stepsize_schedule(scale)**(-1))**-1
-        alpha *= (mu_h+1)**self.t
+        eta = self.get_stepsize_schedule()
 
         max_grad_norm = float(self.params["max_grad_norm"])
         inf_norms_theta = np.max(np.abs(self.last_thetas), axis=1)
@@ -470,8 +490,10 @@ class PMDGeneralStateFiniteAction(FOPO):
         else:
             clip_coef = np.ones(len(inf_norms))
 
-        self.theta_accum += alpha * np.diag(clip_coef)@self.last_thetas
-        self.intercept_accum += alpha * np.diag(clip_coef)@self.last_intercepts
+        self.last_theta_accum = np.copy(self.theta_accum)
+        self.last_intercept_accum = np.copy(self.intercept_accum)
+        self.theta_accum += eta * np.diag(clip_coef)@self.last_thetas
+        self.intercept_accum += eta * np.diag(clip_coef)@self.last_intercepts
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -492,12 +514,9 @@ class PMDGeneralStateFiniteAction(FOPO):
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["rollout_len"]
-        # old_max_ep_per_iter = self.params["max_ep_per_iter"]
-        self.rollout_len = max(1000, self.n_actions*100)
-        # self.params["max_ep_per_iter"] = -1
+        self.params["rollout_len"] =  10
         self.collect_rollouts()
-        self.rollout_len = old_rollout_len
-        # self.params["max_ep_per_iter"] = old_max_ep_per_iter
+        self.params["rollout_len"] =  old_rollout_len
 
         # TODO: Can we delete these?
         # self.obs_runstat.update()
@@ -535,5 +554,18 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.fa.set_intercept(self.last_intercepts[i], i)
             q_s.append(self.fa.predict(np.atleast_2d(s), i))
         return np.dot(q_s, self._get_policy(s))
+
+    def prepare_log(self):
+        l = 15
+        super().prepare_log()
+
+        coef_change = la.norm(self.last_theta_accum - self.theta_accum)
+        bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)
+
+        self.msg += "train/\n"
+        self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
+        self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
+        self.msg += f"  {'delta_coef':<{l}}: {coef_change:.4e}\n"
+        self.msg += f"  {'delta_bias':<{l}}: {bias_change:.4e}\n"
 
 # class PMDGeneralStateAction(PMD):
