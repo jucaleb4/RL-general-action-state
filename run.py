@@ -75,7 +75,7 @@ def main(alg, env_name, seed, settings, output={}):
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
         alg = PMDGeneralStateFiniteAction(env, params)
-    if alg == "pda":
+    elif alg == "pda":
         alg = PDAGeneralStateAction(env, params)
     elif alg == "qlearn":
         alg = QLearn(env, params)
