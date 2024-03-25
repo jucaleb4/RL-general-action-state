@@ -183,12 +183,14 @@ class PDAGeneralStateAction(FOPO):
             self._last_state_done,
         )
 
+
         X = np.hstack((s_visited, a_visited))
         self._last_sa_visited = np.copy(X)
 
         y = adv_est if self.params["use_advantage"] else q_est
+        y -= np.mean(y)
         if self.params.get("normalize_sa_val", False):
-            y = (y-np.mean(y))/(np.std(y)+1e-8)
+            y /= (np.std(y)+1e-8)
 
         self.last_pe_loss = self.fa_Q_k.update(X, y)
 

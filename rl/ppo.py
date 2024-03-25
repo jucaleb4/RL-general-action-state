@@ -35,7 +35,8 @@ class PPO(RLAlg):
         time_arr = self.env.get_episode_times() 
         print(f"Runtime: {np.sum(time_arr):.2f}s")
 
-        self.save_episode_rewards(rwd_arr, len_arr)
+        if len(self.params["fname"]) > 0:
+            self.save_episode_rewards(rwd_arr, len_arr)
 
     def save_episode_rewards(self, rwd_arr, len_arr):
         if "fname" not in self.params:

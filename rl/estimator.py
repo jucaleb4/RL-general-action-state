@@ -4,6 +4,7 @@ from abc import abstractmethod
 import warnings
 
 import numpy as np
+import numpy.linalg as la
 
 import sklearn.pipeline
 import sklearn.preprocessing
@@ -11,6 +12,7 @@ from sklearn.kernel_approximation import RBFSampler
 
 from sklearn.linear_model import SGDRegressor
 from sklearn.linear_model import Ridge
+from sklearn.linear_model import Lasso
 
 import torch
 from torch import nn
@@ -81,8 +83,20 @@ class LinearFunctionApproximator():
                 model = Ridge(alpha=self.alpha)
                 model.fit(self.featurize([X[0]]), [0])
             else:
-                model = SGDRegressor(learning_rate=params["sgd_stepsize"], max_iter=params["sgd_n_iter"])
-                model.partial_fit(self.featurize([X[0]]), [0])
+                # model = SGDRegressor(
+                #     learning_rate=params["sgd_stepsize"], 
+                #     max_iter=params["sgd_n_iter"],
+                #     alpha=params["sgd_alpha"],
+                # )
+                model = Lasso(
+                    alpha=0.0001,
+                    precompute=True,
+                    max_iter=params["sgd_n_iter"],
+                    positive=True, 
+                    random_state=9999, 
+                    selection='random'
+                )
+                # model.partial_fit(self.featurize([X[0]]), [0])
 
             self.models.append(model)
     
@@ -96,7 +110,8 @@ class LinearFunctionApproximator():
         assert 0 <= i < len(self.models)
 
         features = self.featurize(x)
-        return self.models[i].predict(features)[0]
+        # return self.models[i].predict(features)[0]
+        return np.squeeze(self.models[i].predict(features))
     
     def update(self, X, y, i=0):
         """
@@ -106,7 +121,12 @@ class LinearFunctionApproximator():
         assert 0 <= i < len(self.models)
 
         features = self.featurize(X)
-        self.models[i].fit(features, y)
+        a = self.models[i].fit(features, y)
+
+        pred = self.predict(X, i)
+        # averaged l_2 squared loss
+        loss = (2*len(y))**(-1)*la.norm(pred-y, ord=2)**2
+        return loss
         # for x_i,y_i in zip(X,y):
         #     features = self.featurize(np.atleast_2d(x_i))
         #     self.models[i].partial_fit(features, [y_i])
@@ -227,8 +247,11 @@ class NNFunctionApproximator(FunctionApproximator):
         # validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=4, shuffle=False)
 
         self.model.train()
+        last_loss = 0.
         for epoch_i in range(n_epochs):
-            self._train_one_epoch(training_loader, epoch_i)
+            last_loss = self._train_one_epoch(training_loader, epoch_i)
+
+        return last_loss
 
     def _train_one_epoch(self, training_loader, epoch_idx):
         running_loss = 0.
@@ -256,13 +279,7 @@ class NNFunctionApproximator(FunctionApproximator):
             self.optimizer.step()
 
             # Gather data and report
-            running_loss += loss.item()
-            if i % 1000 == 999:
-                last_loss = running_loss / 1000 # loss per batch
-                print('  batch {} loss: {}'.format(i + 1, last_loss))
-                tb_x = epoch_index * len(training_loader) + i + 1
-                tb_writer.add_scalar('Loss/train', last_loss, tb_x)
-                running_loss = 0.
+            last_loss = loss.item()
 
         return last_loss
 

@@ -139,10 +139,6 @@ class Rollout:
 
         if done:
             moving_avg = 0
-            if len(self.all_ep_cum_rwd) > 0:
-                i = min(25, len(self.all_ep_cum_rwd))
-                moving_avg = np.mean(self.all_ep_cum_rwd[-i:])
-            print(f"Ep {len(self.all_ep_cum_rwd)} reward:{self.curr_ep_cum_rwd:.2f} len:{self.curr_ep_len} (25-moving avg: {moving_avg:.2f})")
             self.all_ep_cum_rwd.append(self.curr_ep_cum_rwd)
             self.all_ep_len.append(self.curr_ep_len)
             self.curr_ep_cum_rwd = 0
@@ -173,10 +169,10 @@ class Rollout:
         assert 0 <= abs(t) <= len(self.s_batch)
         return self.s_batch[t]
 
-    def get_episode_rewards(self):
+    def get_ep_rwds(self):
         return self.all_ep_cum_rwd
 
-    def get_episode_lens(self):
+    def get_ep_lens(self):
         return self.all_ep_len
 
     def compute_all_stateaction_value(self):
