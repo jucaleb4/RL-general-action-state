@@ -16,7 +16,7 @@ class RLAlg(ABC):
     def learn(self, n_iter: int=100):
         self.t = 0
         try:
-            self._learn(n_iter)
+            return self._learn(n_iter)
         except KeyboardInterrupt:
             print(f"Terminated early at iteration {self.t}")
 

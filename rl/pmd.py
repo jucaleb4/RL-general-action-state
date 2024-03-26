@@ -2,17 +2,16 @@
 from abc import abstractmethod
 
 import warnings 
+import time
 
 import numpy as np
 import numpy.linalg as la
 
 import gymnasium as gym
 
-import sklearn.linear_model as sklm
-
 from rl import RLAlg
 from rl import Rollout
-from rl import FunctionApproximator
+from rl import LinearFunctionApproximator
 from rl.utils import vec_to_int
 from rl.utils import safe_normalize_row
 from rl.utils import rbf_kernel
@@ -22,67 +21,103 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 
-class PMD(RLAlg):
+class FOPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
         self.check_params()
 
+        # initialize
+        self.t = 0
+        self._last_s, _ = env.reset()
+
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
 
-        self.initialized_env = False
+        self.n_ep = 0
+        self.n_step = 0
+        self.last_iter_ep = 0
+        self.max_ep = params["max_ep"] if params["max_ep"] > 0 else np.inf
+        self.max_step = params["max_step"] if params["max_step"] > 0 else np.inf
 
-    def _learn(self, n_iter):
-        """ Runs PMD algorithm for `n_iter`s """
-        for t in range(n_iter):
-            print(f"=== Start iteration {t} ===")
+    def _learn(self, max_iter):
+        """ Runs PMD algorithm for `max_iter`s """
+        checkpoint = np.linspace(0, max_iter, num=10, dtype=int)
+        self.s_time = time.time()
+
+        for t in range(max_iter):
             self.t = t
 
-            self.params["eps_explore"] = 0.05 + 0.95 * 0.99**t
+            self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
 
             self.collect_rollouts()
+
+            if self.n_ep == self.max_ep:
+                break
 
             self.policy_evaluate()
 
             self.policy_update()
 
-            mean_perf = self.policy_performance()
-            # print(f"[{self.t}] mean episode len={np.mean(self.rollout.get_episode_lens()):.1f}")
-            # print(f"[{self.t}] mean episode rwd={np.mean(self.rollout.get_episode_rewards()):.1f}")
-            # print(f"[{self.t}] mean(V)={mean_perf}")
+            self.prepare_log()
+            self.dump_log()
 
-        # print(f"Final policy:\n{self.policy}")
+            if t in checkpoint:
+                self.save_episode_reward_and_len()
+
+            if self.n_ep == self.max_ep or self.n_step == self.max_step:
+                break
+
         self.save_episode_reward_and_len()
+        # return moving average reward
+        ep_cum_rwds = self.rollout.get_ep_rwds()
+        t = min(25, len(ep_cum_rwds))
+        return np.mean(ep_cum_rwds[-t:])
 
     def check_params(self):
-        if "single_trajectory" not in self.params:
-            warnings.warn("Did not pass in 'single_trajectory' into params, defaulting to False")
-            self.params["single_trajectory"] = False
         if "rollout_len" not in self.params:
             warnings.warn("Did not pass in 'rollout_len' into params, defaulting to 1000")
             self.params["rollout_len"] = 1000
 
     def collect_rollouts(self):
         """ Collect samples for policy evaluation """
-        self.rollout.clear_batch(keep_last_obs=self.params["single_trajectory"])
+        self.rollout.clear_batch()
 
-        if not self.initialized_env or not self.params["single_trajectory"]:
-            (s,_) = self.env.reset()
-            self.initialized_env = True
+        s = self._last_s
+
+        if self.params["max_ep_per_iter"] > 0:
+            max_num_resets = self.params["max_ep_per_iter"]  
         else:
-            s = self.rollout.get_state(0)
-
-        a = self.policy_sample(s)
-        self.rollout.add_step_data(s, a)
-
+            max_num_resets = np.inf
+        num_resets = 0
         for t in range(self.params["rollout_len"]): 
-            (s, r, term, trunc, _)  = self.env.step(a)
-            a = self.policy_sample(s)
-            self.rollout.add_step_data(s, a, r, term, trunc)
+            v_s = self.estimate_value(s)
 
-            if term or trunc:
-                self.env.reset()
-                break
+            a = self.policy_sample(s)
+            (next_s, r_raw, term, trunc, _)  = self.env.step(a)
+            done = term or trunc
+            r = self.normalize_rwd(r_raw)
+            # if truncated due to time limit, bootstrap cost-to-go
+            if trunc:
+                v_next_s = self.estimate_value(next_s)
+                r += self.params["gamma"] * v_next_s
+            if t == self.params["rollout_len"]-1:
+                self._curr_s = next_s
+                self._last_pred_value = self.estimate_value(next_s)
+                self._last_state_done = done
+            self.rollout.add_step_data(s, a, r, done, v_s, r_raw=r_raw)
+            s = next_s
+            self.n_step += 1
+            if done:
+                self.n_ep += 1
+                if self.n_ep == self.max_ep or self.n_step == self.max_step:
+                    return 
+                s, _ = self.env.reset()
+                self._last_s = np.copy(s)
+                num_resets += 1
+                if num_resets == max_num_resets:
+                    self._last_pred_value = self.estimate_value(next_s)
+                    self._last_state_done = True
+                    break
 
     @abstractmethod
     def policy_evaluate(self):
@@ -104,29 +139,22 @@ class PMD(RLAlg):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
-        base_stepsize = self.params.get("base_stepsize", eta_0)
-        if base_stepsize <= 0:
-            base_stepsize = eta_0
-
-        if self.params.get("stepsize", "constant") == "constant":
-            return base_stepsize
-        if self.params["stepsize"] == "decreasing":
-            return base_stepsize * (self.t+1)**(-0.5)
-
-    def remap_obs(self, obs): 
-        """ 
-        Possibly remaps state (e.g., for Discrete environments, we want states
-        to start from index 0 -- while the environment can start from a
-        different index.
-        """
-        return obs
-
-    def remap_action(self, a): 
-        """ 
-        Same as `remap_obs`
-        """
-        return a
+        # no strong regularization
+        mu_h = self.params.get("mu_h", 0)
+        if mu_h == 0:
+            eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
+            base_stepsize = self.params.get("base_stepsize", eta_0)
+            if base_stepsize <= 0:
+                base_stepsize = eta_0
+            if self.params.get("stepsize", "constant") == "constant":
+                return base_stepsize
+            if self.params["stepsize"] == "decreasing":
+                return base_stepsize * float(self.t+1)**(-0.5)
+        else:
+            base_stepsize = mu_h/(self.t+1)
+            stepsize = (mu_h + 1./base_stepsize)**(-1)
+            stepsize *= (mu_h+1)**(self.t+1)
+            return stepsize
 
     def env_warmup(self):
         return
@@ -140,11 +168,45 @@ class PMD(RLAlg):
     def normalize_rwd(self, r):
         return r
 
-    def save_episode_reward_and_len(self):
-        rwd_arr = self.rollout.get_episode_rewards()
-        len_arr = self.rollout.get_episode_lens()
+    def estimate_value(self, s):
+        raise NotImplemented
 
-        if "fname" not in self.params:
+    def prepare_log(self):
+        l = 15
+        self.msg = "-"*30 + "\n"
+
+        rwd_arr = self.rollout.get_ep_rwds()
+        len_arr = self.rollout.get_ep_lens()
+        rwd_arr_trunc = rwd_arr[self.last_iter_ep: self.n_ep]
+        len_arr_trunc = len_arr[self.last_iter_ep: self.n_ep]
+        i = min(25, len(rwd_arr))
+        moving_avg = np.mean(rwd_arr[-i:])
+
+
+        self.msg += "rollout/\n"
+        self.msg += f"  {'itr_ep_len_mean':<{l}}: {np.mean(len_arr_trunc):.2f}\n"
+        self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
+        self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_ep-self.last_iter_ep)}\n"
+        self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
+
+        self.msg += "time/\n"
+        self.msg += f"  {'itr':<{l}}: {self.t}\n"
+        self.msg += f"  {'time_elap':<{l}}: {time.time()-self.s_time:.2f}\n"
+        self.msg += f"  {'tot_steps':<{l}}: {self.n_step}\n"
+        self.msg += f"  {'tot_ep':<{l}}: {self.n_ep}\n"
+
+        self.last_iter_ep = self.n_ep
+
+    def dump_log(self):
+        self.msg += "-"*30 + "\n"
+        print(self.msg, end="")
+        self.msg = ""
+
+    def save_episode_reward_and_len(self):
+        rwd_arr = self.rollout.get_ep_rwds()
+        len_arr = self.rollout.get_ep_lens()
+
+        if len(self.params.get("fname", "")) == 0:
             warnings.warn("No filename given, not saving")
             return
         fmt="%1.2f,%i"
@@ -154,7 +216,7 @@ class PMD(RLAlg):
             np.savetxt(fp, arr, fmt=fmt)
         print(f"Saved episode data to {self.params['fname']}")
 
-class PMDFiniteStateAction(PMD):
+class PMDFiniteStateAction(FOPO):
     def __init__(self, env, params):
         super().__init__(env, params)
 
@@ -264,17 +326,7 @@ class PMDFiniteStateAction(PMD):
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
 
-    def remap_obs(self, obs):
-        if isinstance(obs, np.ndarray):
-            return obs.flat[0]
-        return obs
-
-    def remap_action(self, action):
-        if isinstance(action, np.ndarray):
-            return action.flat[0]
-        return action
-
-class PMDGeneralStateFiniteAction(PMD):
+class PMDGeneralStateFiniteAction(FOPO):
     def __init__(self, env, params):
         super().__init__(env, params)
         self.check_PMDGeneralStateFiniteAction_params()
@@ -307,17 +359,39 @@ class PMDGeneralStateFiniteAction(PMD):
 
         # uniform policy and function approximation
         self.env_warmup()
-        (q_est, sa_visited_tuple, _) = self.rollout.visited_stateaction_value()
-        (X, _) = sa_visited_tuple
-        self.fa = FunctionApproximator(self.n_actions, X, params)
+        (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
+        X = s_visited
+        self.fa = LinearFunctionApproximator(self.n_actions, X, params)
         self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
         self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
         self.theta_accum = np.copy(self.last_thetas)
         self.intercept_accum = np.copy(self.last_intercepts)
+        self.last_theta_accum = np.copy(self.theta_accum)
+        self.last_intercept_accum = np.copy(self.intercept_accum)
+
+        self.last_max_q_est = ...
+        self.last_max_adv_est = ...
+        self.last_policy_at_s = np.ones(self.n_actions, dtype=float)/self.n_actions
 
     def check_PMDGeneralStateFiniteAction_params(self):
         # TODO: Remove this is doing NN or SGD
         return
+
+    def _get_policy(self, s):
+        log_policy_at_s = np.zeros(self.n_actions, dtype=float)
+        for i in range(self.n_actions):
+            self.fa.set_coef(self.theta_accum[i], i)
+            self.fa.set_intercept(self.intercept_accum[i], i)
+            log_policy_at_s[i] = self.fa.predict(np.atleast_2d(s), i)
+        # TEMP (more robust way to do regularization)
+        mu_h = self.params.get("mu_h", 0)
+        log_policy_at_s *= (mu_h+1)**(-self.t-1)
+        policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
+        policy_at_s = np.atleast_2d(policy_at_s)
+
+        safe_normalize_row(policy_at_s)
+
+        return np.squeeze(policy_at_s)
 
     def policy_sample(self, s):
         """ Samples random action from current policy """
@@ -327,21 +401,15 @@ class PMDGeneralStateFiniteAction(PMD):
         eps = self.params.get("eps_explore", 0)
         assert 0 <= eps <= 1
 
-        log_policy_at_s = np.zeros(self.n_actions, dtype=float)
-        for i in range(self.n_actions):
-            self.fa.set_coef(self.theta_accum[i], i)
-            self.fa.set_intercept(self.intercept_accum[i], i)
-            log_policy_at_s[i] = self.fa.predict(np.atleast_2d(s), i)
-        policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
-        policy_at_s = np.atleast_2d(policy_at_s)
-
-        safe_normalize_row(policy_at_s)
-
-        pi = (1.-eps)*np.squeeze(policy_at_s) + eps/self.n_actions
+        pi = (1.-eps)*self._get_policy(s) + eps/self.n_actions
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """
+        self.obs_runstat.update()
+        self.action_runstat.update()
+        self.rwd_runstat.update()
+
         if self.params.get("train_method", "mc") == "mc":
             self.monte_carlo_Q()
         elif self.params["train_method"] == "ctd":
@@ -357,35 +425,49 @@ class PMDGeneralStateFiniteAction(PMD):
         We update our running stats (e.g., mean and variance) for next
         iteration
         """
-        self.obs_runstat.update()
-        self.action_runstat.update()
-        self.rwd_runstat.update()
-
         # check if we are missing any points 
-        (q_est, sa_visited_tuple, ep_truncated) = self.rollout.visited_stateaction_value()
-        (s_visited, a_visited) = sa_visited_tuple
+        (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value(
+            self._last_pred_value,
+            self._last_state_done,
+        )
 
-        # TODO: Make this a setting? Also see if we terminated last step (unlikely right now)
-        if ep_truncated:
-            last_s, last_a = s_visited[-1], a_visited[-1].flat[0]
-            self.fa.set_coef(self.last_thetas[last_a], last_a)
-            self.fa.set_intercept(self.last_intercepts[last_a], last_a)
-            q_last_sa_est = self.fa.predict(np.atleast_2d(last_s), last_a)
-            gamma_weight = np.power(self.params["gamma"], np.arange(1,1+len(q_est)))[::-1]
-            q_est += q_last_sa_est * gamma_weight
+        self.last_max_q_est = np.max(np.abs(q_est))
+        self.last_max_adv_est = np.max(np.abs(adv_est))
 
         X = s_visited
-        y = q_est
+        y = adv_est if self.params["use_advantage"] else q_est
+
+        # y -= np.mean(y)
+        # only keep high value
+        # pos_y = y[np.where(y>0)]
+        # neg_y = y[np.where(y<0)]
+        # keep_idx_pos = np.where(y > np.median(pos_y))
+        # keep_idx_neg = np.where(y < np.median(neg_y))
+        # keep_idx = np.append(keep_idx_pos, keep_idx_neg)
+        # X = X[keep_idx]
+        # y = y[keep_idx]
+        # a_visited = a_visited[keep_idx]
+        # s_visited = s_visited[keep_idx]
+
+        self.std_y = np.std(y)
+        if self.params["normalize_sa_val"]:
+            y = (y-np.mean(y))/(np.std(y) + 1e-16)
 
         # extract fitted parameters
+        not_visited_actions = []
+        loss = 0.
         for i in range(self.n_actions):
             action_i_idx = np.where(a_visited==i)[0]
             if len(action_i_idx) == 0:
-                print(f"Did not update action {i}")
+                not_visited_actions.append(i)
                 continue
-            self.fa.update(X[action_i_idx], y[action_i_idx], i)
+            loss += self.fa.update(X[action_i_idx], y[action_i_idx], i)
             self.last_thetas[i] = np.copy(self.fa.get_coef(i))
             self.last_intercepts[i] = np.copy(self.fa.get_intercept(i))
+        if len(not_visited_actions) > 0:
+            print(f"Did not update actions {not_visited_actions}")
+
+        self.last_pe_loss = loss/self.n_actions
 
     def ctd_Q(self):
         raise NotImplemented
@@ -404,8 +486,12 @@ class PMDGeneralStateFiniteAction(PMD):
     def kl_policy_update(self):
         """ Policy update with PMD and KL divergence """
         self.updated_at_least_once = True
-        self.theta_accum += self.get_stepsize_schedule()*self.last_thetas
-        self.intercept_accum += self.get_stepsize_schedule()*self.last_intercepts
+        eta = self.get_stepsize_schedule()
+
+        self.last_theta_accum = np.copy(self.theta_accum)
+        self.last_intercept_accum = np.copy(self.intercept_accum)
+        self.theta_accum += eta * self.last_thetas
+        self.intercept_accum += eta * self.last_intercepts
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -420,29 +506,19 @@ class PMDGeneralStateFiniteAction(PMD):
     def get_value_function(self):
         return np.sum(np.multiply(self.Q_est, self.policy), axis=1)
 
-    def remap_obs(self, obs):
-        if isinstance(obs, np.ndarray):
-            return obs.flat[0]
-        return obs
-
-    def remap_action(self, action):
-        if isinstance(action, np.ndarray):
-            return action.flat[0]
-        return action
-
     def env_warmup(self):
         """ 
         Runs the environment for a fixed number of iterations estimate
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["rollout_len"]
-        self.rollout_len = max(1000, self.n_actions*100)
+        self.params["rollout_len"] =  1
         self.collect_rollouts()
-        self.rollout_len = old_rollout_len
+        self.params["rollout_len"] =  old_rollout_len
 
         # TODO: Can we delete these?
-        self.obs_runstat.update()
-        self.action_runstat.update()
+        # self.obs_runstat.update()
+        # self.action_runstat.update()
         self.rwd_runstat.update()
 
         print("Finished normalization warmup")
@@ -454,14 +530,45 @@ class PMDGeneralStateFiniteAction(PMD):
         return s
 
     def normalize_action(self, a):
-        self.obs_runstat.push(a)
+        self.action_runstat.push(a)
         if self.params.get("normalize_action", False):
             return np.divide(a-self.action_runstat.mean, np.sqrt(self.action_runstat.var))
         return a
 
     def normalize_rwd(self, r):
+        """ Only scale reward, do not re-center """
+        self.rwd_runstat.push(r)
         if self.params.get("normalize_rwd", False):
-            return np.divide(r-self.rwd_runstat.mean, np.sqrt(self.rwd_runstat.var**0.5))
+            return np.divide(r, np.sqrt(self.rwd_runstat.var))
+            # return np.divide(r-self.rwd_runstat.mean, np.sqrt(self.rwd_runstat.var**0.5))
         return r
+
+    def estimate_value(self, s):
+        if not self.updated_at_least_once:
+            return 0
+        q_s = []
+        for i in range(self.n_actions):
+            self.fa.set_coef(self.last_thetas[i], i)
+            self.fa.set_intercept(self.last_intercepts[i], i)
+            q_s.append(self.fa.predict(np.atleast_2d(s), i))
+        return np.dot(q_s, self._get_policy(s))
+
+    def prepare_log(self):
+        l = 15
+        super().prepare_log()
+
+        coef_change = la.norm(self.last_theta_accum - self.theta_accum)
+        bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)
+        policy_at_s = self._get_policy(self._last_s)
+
+        self.msg += "train/\n"
+        self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
+        self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
+        self.msg += f"  {'delta_coef':<{l}}: {coef_change:.4e}\n"
+        self.msg += f"  {'delta_bias':<{l}}: {bias_change:.4e}\n"
+        self.msg += f"  {'delta_policy':<{l}}: {self.last_policy_at_s}->{policy_at_s}\n"
+
+        self.last_policy_at_s = np.copy(policy_at_s)
+        self._last_s = np.copy(self._curr_s)
 
 # class PMDGeneralStateAction(PMD):
