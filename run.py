@@ -51,6 +51,7 @@ def main(alg, env_name, seed, settings):
         "fit_mode": 1,
         "fname": fname,
         "stepsize": settings["stepsize"],
+        "base_stepsize": settings["base_stepsize"]
     })
     # alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":

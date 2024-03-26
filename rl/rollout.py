@@ -259,7 +259,8 @@ class Rollout:
         np.divide(cumulative_weighted_rwds, weight_factors, out=cumulative_weighted_rwds)
 
         cutoff = min(self.cutoff, len(cumulative_weighted_rwds)-1)
-        q_est = cumulative_weighted_rwds[:-cutoff]
+        # q_est = cumulative_weighted_rwds[:-cutoff]
+        q_est = np.copy(cumulative_weighted_rwds)
         s_visited = np.copy(self.s_batch[1:len(q_est)+1])
         a_visited = np.copy(self.a_batch[1:len(q_est)+1])
         sa_visited = (s_visited, a_visited)
