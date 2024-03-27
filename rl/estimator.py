@@ -40,7 +40,7 @@ class FitMode(Enum):
     SAA = 0
     SA = 1
 
-class LinearFunctionApproximator():
+class LinearFunctionApproximator(FunctionApproximator):
     """
     Function approximator. 
 
@@ -58,51 +58,56 @@ class LinearFunctionApproximator():
         super().__init__()
         assert num_models > 0
 
-        self.fit_mode = 1 # FitMode(params.get("fit_mode", 0))
         self.normalize = params["normalize_obs"]
         self.alpha = params["sgd_alpha"]
+        self.feature_type = params.get("feature_type", "rbf")
+        self._dim = params.get("dim", 100)
+        self._deg = params.get("deg", 1)
 
         if self.normalize:
             self.scaler = sklearn.preprocessing.StandardScaler()
             self.scaler.fit(X)
 
-        # TODO: Allow custom features and more customizability
-        self.featurizer = sklearn.pipeline.FeatureUnion([
-            ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
-            ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
-            ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
-            ("rbf4", RBFSampler(gamma=0.5, n_components=100))
-        ])
+
+        if self.feature_type == "poly":
+            # TODO: Allow custom features and more customizability
+            # self.featurizer = sklearn.pipeline.FeatureUnion([
+                # ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
+                # ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
+            #     ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
+                # ("rbf4", RBFSampler(gamma=0.5, n_components=100))
+            # ])
+            self.featurizer = PolynomialFeatures(self._deg)
+        elif self.feature_type == "rbf":
+            self.featurizer = RBFSampler(gamma=1.0, n_components=self.dim)
+        else:
+            print(f"Unknown feature type {self.feature_type}")
+            raise RuntimeError
 
         self.featurizer.fit(X)
 
         self.models = []
         for _ in range(num_models):
-            if self.fit_mode == FitMode.SAA:
-                assert self.alpha >= 0
-                model = Ridge(alpha=self.alpha)
-                model.fit(self.featurize([X[0]]), [0])
-            else:
-                # model = SGDRegressor(
-                #     learning_rate=params["sgd_stepsize"], 
-                #     max_iter=params["sgd_n_iter"],
-                #     alpha=params["sgd_alpha"],
-                # )
-                model = Lasso(
-                    alpha=0.0001,
-                    precompute=True,
-                    max_iter=params["sgd_n_iter"],
-                    positive=True, 
-                    random_state=9999, 
-                    selection='random'
-                )
-                # model.partial_fit(self.featurize([X[0]]), [0])
+            model = SGDRegressor(
+                learning_rate=params["sgd_stepsize"], 
+                max_iter=params["sgd_n_iter"],
+                alpha=params["sgd_alpha"],
+            )
 
+            # model = Lasso(
+            #     alpha=0.0001,
+            #     precompute=True,
+            #     max_iter=params["sgd_n_iter"],
+            #     positive=True, 
+            #     random_state=9999, 
+            #     selection='random'
+            # )
+
+            model.partial_fit(self.featurize([X[0]]), [0])
             self.models.append(model)
     
     def featurize(self, X):
         if self.normalize:
-            print("here")
             X = self.scaler.transform(X)
         return self.featurizer.transform(X)
     
@@ -124,21 +129,8 @@ class LinearFunctionApproximator():
         a = self.models[i].fit(features, y)
 
         pred = self.predict(X, i)
-        # averaged l_2 squared loss
         loss = (2*len(y))**(-1)*la.norm(pred-y, ord=2)**2
         return loss
-        # for x_i,y_i in zip(X,y):
-        #     features = self.featurize(np.atleast_2d(x_i))
-        #     self.models[i].partial_fit(features, [y_i])
-        # if self.fit_mode == FitMode.SAA:
-        #     # solve regularized SAA problem
-        #     features = self.featurize(X)
-        #     self.models[i].fit(features, y)
-        # else: 
-        #     # an SGD step
-        #     for x_i,y_i in zip(X,y):
-        #         features = self.featurize(np.atleast_2d(x_i))
-        #         self.models[i].partial_fit(features, [y_i])
 
     def set_coef(self, coef, i):
          assert 0 <= i < len(self.models)
@@ -158,8 +150,12 @@ class LinearFunctionApproximator():
 
     @property
     def dim(self):
-        # TODO: Make this customizable
-        return 400
+        if self.feature_type == "poly":
+            return self.featurizer.n_output_features_
+        elif self.feature_type == "rbf":
+            return self.featurizer.n_components
+        else:
+            raise RuntimeError
 
     def save_model(self):
         raise NotImplemented

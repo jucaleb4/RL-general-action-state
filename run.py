@@ -21,27 +21,19 @@ from rl import PDAGeneralStateAction
 from rl import QLearn
 from rl import PPO
 
-def main(alg, env_name, seed, settings, output={}):
-    # env = gym.make(
-    #     "gym_examples/GridWorld-v0", 
-        # "gym_examples/SimpleWorld-v0", 
-    #     size=4,
-    #     action_eps=0.00,
-    #     max_episode_steps=1000, # can change length here!
-    # )
-    # env = gym.wrappers.FlattenObservation(env)
-    # env = gym.wrappers.TransformReward(env, lambda r : 1-r)
+from rl import utils
 
+def main(alg, env_name, seed, settings, output={}):
     env = gym.make(
         env_name,
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
+    if "GridWorld" in env_name:
+        env = gym.wrappers.FlattenObservation(env)
+        env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
-    # env = gym.wrappers.TransformReward(env, lambda r : -r)
     env.reset()
-
-    # import ipdb; ipdb.set_trace()
 
     fname = ""
     if settings.get("save_logs", False):
@@ -50,30 +42,19 @@ def main(alg, env_name, seed, settings, output={}):
     params = settings.copy()
     params["verbose"] = False
     params["fname"] = fname
-    """
-    params = dict({
-        "verbose": False,
-        "fname": fname,
-        "mu_h": settings["mu_h"],
-        "use_advantage": settings["use_advantage"],
-        "gamma": settings["gamma"],
-        "gae_lambda": settings["gamma"],
-        "stepsize": settings["stepsize"],
-        "base_stepsize": settings["base_stepsize"],
-        "rollout_len": settings["rollout_len"],
-        "max_ep_per_iter": settings["max_ep_per_iter"],
-        "normalize_obs": settings["normalize_obs"],
-        "normalize_rwd": settings["normalize_rwd"],
-        "normalize_sa_val": settings["normalize_rwd"],
-        "max_grad_norm": settings["max_grad_norm"],
-        "normalize_rwd": settings["normalize_rwd"],
-        "sgd_alpha": settings["sgd_alpha"],
-        "sgd_stepsize": settings["sgd_stepsize"],
-        "sgd_n_iter": settings["sgd_n_iter"],
-    })
-    """
-    # alg = PMDFiniteStateAction(env, params)
+
+    (obs_is_finite, obs_dim, _) = utils.get_space_property(env.observation_space)
+    (act_is_finite, act_dim, _) = utils.get_space_property(env.action_space)
+    is_enumerable = obs_is_finite and act_is_finite
+
+    assert alg not in ["pmd", "pda"] or params["f_approx"] != "none" or is_enumerable, \
+           "Must use function approximation is not enumerable"
+
+    if params["f_approx"] == "none":
+        alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
+        assert params["f_approx"] != "none" and act_is_finite, \
+        "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
     elif alg == "pda":
         alg = PDAGeneralStateAction(env, params)
@@ -113,6 +94,7 @@ if __name__ == "__main__":
     )
     parser.add_argument('--alg', default="pmd", choices=["pmd", "pda", "qlearn", "ppo"], help="Algorithm")
     parser.add_argument('--env_name', default="LunarLander-v2", choices=[
+        "gym_examples/GridWorld-v0", 
         "LunarLander-v2", 
         "MountainCar-v0", 
         "Pendulum-v1",
@@ -127,6 +109,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--max_iter', type=int, default=100, help="Max number of training iterations")
     parser.add_argument('--max_ep', type=int, default=-1, help="Max number of training episodes")
+    parser.add_argument('--f_approx', default="nn", choices=["none", "linear", "nn"], help="Type of function approximation")
 
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")
