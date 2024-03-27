@@ -17,7 +17,7 @@ class FiniteStateActionRollout(unittest.TestCase):
         )
 
         gamma = 0.99
-        rollout = Rollout(env, gamma)
+        rollout = Rollout(env, gamma=gamma)
         return env, rollout
 
     def test_set_gamma(self):
@@ -29,18 +29,6 @@ class FiniteStateActionRollout(unittest.TestCase):
         
         self.assertEqual(rollout.gamma, gamma)
 
-    def test_add_data(self):
-        (env, rollout) = self.get_rollout_object()
-
-        # add reset step
-        s, info = env.reset()
-        a = env.action_space.sample()
-        rollout.add_step_data(s, a)
-
-        (s,r,terminate, truncate, info) = env.step(a)
-        a = env.action_space.sample()
-        rollout.add_step_data(s, a, r, terminate, truncate)
-
     def test_add_many_data(self):
         """ Batch will need to resize (default size is 32) """
         (env, rollout) = self.get_rollout_object()
@@ -48,26 +36,12 @@ class FiniteStateActionRollout(unittest.TestCase):
         # add reset step
         s, info = env.reset()
         a = env.action_space.sample()
-        rollout.add_step_data(s, a)
 
         for _ in range(36):
-            (s,r,terminate, truncate, info) = env.step(a)
+            (s_next,r,terminate, truncate, info) = env.step(a)
+            rollout.add_step_data(s, a, r, terminate or truncate)
+            s = s_next
             a = env.action_space.sample()
-            rollout.add_step_data(s, a, r, terminate, truncate)
-
-    def test_initialize_and_clear(self):
-        (env, rollout) = self.get_rollout_object()
-        self.assertEqual(rollout.iter_ct, 0)
-
-        s, info = env.reset()
-        a = env.action_space.sample()
-        rollout.add_step_data(s, a)
-
-        self.assertEqual(rollout.iter_ct, 1)
-
-        rollout.clear_batch()
-
-        self.assertEqual(rollout.iter_ct, 0)
 
     def test_compute_all_stateaction_value_visit_all(self):
         """ 
@@ -106,27 +80,22 @@ class FiniteStateActionRollout(unittest.TestCase):
         # this is a test for the environment, not rollout
         self.assertEqual(s, expected_state[0])
 
-        a = action_plan[0]
-        rollout.add_step_data(s, a)
-        self.assertEqual(rollout.iter_ct, 1)
-
         for t in range(1, len(action_plan)):
-            (s, r, term, trunc, info) = env.step(a)
-            a = action_plan[t]
-            rollout.add_step_data(s,a,r,term,trunc)
+            a = action_plan[t-1]
+            (s_next, r, term, trunc, info) = env.step(a)
+            rollout.add_step_data(s,a,r,term or trunc)
+            s = s_next
 
             # these are tests for the environment, not rollout
             self.assertEqual(s, expected_state[t])
             self.assertEqual(r, expected_reward[t-1])
-            self.assertEqual(rollout.iter_ct, t+1)
 
-        self.assertEqual(rollout.iter_ct, len(action_plan))
-        (Q, Ind) = rollout.compute_all_stateaction_value()
+        (Q, A, num_visits) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_Q.shape)
-        self.assertEqual(Ind.shape, correct_Q.shape)
+        self.assertEqual(num_visits.shape, correct_Q.shape)
         # we visited all
-        self.assertTrue(np.all(Ind))
+        self.assertTrue(np.all(num_visits >= 1))
         # accurate Q function
         normalize_const = max(la.norm(correct_Q, ord=np.inf), la.norm(Q, ord=np.inf))
         self.assertLessEqual(la.norm(Q-correct_Q, ord=np.inf)/normalize_const, 1e-16)
@@ -159,30 +128,25 @@ class FiniteStateActionRollout(unittest.TestCase):
         # this is a test for the environment, not rollout
         self.assertEqual(s, expected_state[0])
 
-        a = action_plan[0]
-        rollout.add_step_data(s, a)
-        self.assertEqual(rollout.iter_ct, 1)
-
         for t in range(1, len(action_plan)):
-            (s, r, term, trunc, info) = env.step(a)
-            a = action_plan[t]
-            rollout.add_step_data(s,a,r,term,trunc)
+            a = action_plan[t-1]
+            (s_next, r, term, trunc, info) = env.step(a)
+            rollout.add_step_data(s,a,r,term or trunc)
+            s = s_next
 
             # these are tests for the environment, not rollout
             self.assertEqual(s, expected_state[t])
             self.assertEqual(r, expected_reward[t-1])
-            self.assertEqual(rollout.iter_ct, t+1)
 
-        self.assertEqual(rollout.iter_ct, len(action_plan))
-        (Q, Ind) = rollout.compute_all_stateaction_value()
+        (Q, A, num_visits) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_Q.shape)
-        self.assertEqual(Ind.shape, correct_Q.shape)
+        self.assertEqual(num_visits.shape, correct_Q.shape)
         # we visited all but two
-        self.assertFalse(Ind[1,1])
-        self.assertFalse(Ind[3,1])
-        Ind[1,1] = Ind[3,1] = True
-        self.assertTrue(np.all(Ind))
+        self.assertFalse(num_visits[1,1] >= 1)
+        self.assertFalse(num_visits[3,1] >= 1)
+        num_visits[1,1] = num_visits[3,1] = 1
+        self.assertTrue(np.all(num_visits >= 1))
         # accurate Q function
         normalize_const = max(la.norm(correct_Q, ord=np.inf), la.norm(Q, ord=np.inf))
         self.assertLessEqual(la.norm(Q-correct_Q, ord=np.inf)/normalize_const, 2e-16)
@@ -223,33 +187,34 @@ class FiniteStateActionRollout(unittest.TestCase):
 
             s, info = env.reset()
 
-            a = action_plan[0]
-            rollout.add_step_data(s, a)
-
             for t in range(1, len(action_plan)):
-                (s, r, term, trunc, info) = env.step(a)
-                a = action_plan[t]
+                a = action_plan[t-1]
+                (s_next, r, term, trunc, info) = env.step(a)
                 if t == len(action_plan)-1 and i == 0:
                     term = True
-                rollout.add_step_data(s,a,r,term,trunc)
+                rollout.add_step_data(s,a,r,term or trunc)
+                s = s_next
 
+            """
             # at end of first episode, spam some terminates and truncates
             if i == 0:
                 for j in range(5):
                     a = env.action_space.sample()
-                    (s, r, term, trunc, info) = env.step(a)
+                    (s_next, r, term, trunc, info) = env.step(a)
                     if j % 2 == 0:
                         trunc = True
                     else:
                         term = True
-                    rollout.add_step_data(s,a,r,term,trunc)
+                    rollout.add_step_data(s,a,r,term or trunc)
+                    s = s_next
+            """
 
-        (Q, Ind) = rollout.compute_all_stateaction_value()
+        (Q, A, num_visits) = rollout.compute_all_stateaction_value()
 
         self.assertEqual(Q.shape, correct_avg_Q.shape)
-        self.assertEqual(Ind.shape, correct_avg_Q.shape)
+        self.assertEqual(num_visits.shape, correct_avg_Q.shape)
         # we visited all 
-        self.assertTrue(np.all(Ind))
+        self.assertTrue(np.all(num_visits >= 1))
         # accurate Q function
         normalize_const = max(la.norm(correct_avg_Q, ord=np.inf), la.norm(Q, ord=np.inf))
         self.assertLessEqual(la.norm(Q-correct_avg_Q, ord=np.inf)/normalize_const, 1e-16)

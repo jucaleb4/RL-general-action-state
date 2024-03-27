@@ -87,6 +87,8 @@ class Rollout:
         self.curr_ep_len = 0
         self.curr_ep_cum_rwd = 0
 
+        self.triggered_restart_warning = False
+
     def set_gamma(self, gamma):
         self.gamma = gamma
 
@@ -122,6 +124,10 @@ class Rollout:
         s_raw = state if s_raw is None else s_raw
         a_raw = action if a_raw is None else a_raw
         r_raw = reward if r_raw is None else r_raw
+        if self.time_ct > 0:
+            if self.done_batch[self.time_ct-1] and done and not self.triggered_restart_warning:
+                warnings.warn("Recieved two consecutive done flags, which can distort value function. Make sure to restart environment")
+                self.triggered_restart_warning = True
 
         self.s_batch[self.time_ct] = state
         self.a_batch[self.time_ct] = action
@@ -184,62 +190,34 @@ class Rollout:
         """
         n_states = get_space_cardinality(self.obs_space)
         n_actions = get_space_cardinality(self.action_space)
-        Q = np.zeros((n_states, n_actions), dtype=float)
-        total_num_first_visits = np.zeros((n_states, n_actions), dtype=int)
+        q_est_enum = np.zeros((n_states, n_actions), dtype=float)
+        adv_est_enum = np.copy(q_est_enum)
+        num_visit_enum = np.zeros((n_states, n_actions), dtype=int)
+        already_visited = np.copy(num_visit_enum).astype("bool")
 
-        if self.time_ct == 0:
-            warnings.warn("Have not run rollout, returning null values..")
-            return (Q, total_num_first_visits > 0)
+        output = self.get_montecarlo_stateaction_value(0, False)
+        (q_est, adv_est, s_visited, a_visited) = output
+        s_visited = s_visited.astype("int")
+        a_visited = a_visited.astype("int")
+        assert 0 <= np.min(s_visited)
+        assert np.max(s_visited) < n_states
+        assert 0 <= np.min(a_visited)
+        assert np.max(a_visited) < n_actions
 
-        for i in range(self.reset_time_ct+1):
-            # episode duration = [episode_start, episode_end)
-            if i == 0:
-                t_0 = episode_start = 0
-            else:
-                t_0 = episode_start = self.reset_steps[i-1]
-            if i < self.reset_time_ct:
-                episode_end = self.reset_steps[i]
-            else:
-                episode_end = self.time_ct
+        for i,(s,a) in enumerate(zip(s_visited, a_visited)):
+            if not already_visited[s,a]:
+                num_visit_enum[s,a] += 1
+                already_visited[s,a] = True
+                alpha = 1./num_visit_enum[s,a]
 
-            # when two consecutive steps are termination/truncates
-            if episode_start+1 >= episode_end:
-                continue
+                q_est_enum[s,a] = (1-alpha)*q_est_enum[s,a] + alpha*q_est[i]
+                adv_est_enum[s,a] = (1-alpha)*adv_est_enum[s,a] + alpha*adv_est[i]
 
-            episode_truncated = self.truncate_batch[episode_end-1]
+            # if episode is done, allow averaging
+            if self.done_batch[i]:
+                already_visited.fill(False)
 
-            # rewards appear on second step 
-            rwds = self.r_batch[episode_start+1:episode_end]
-            weight_factors = np.power(self.gamma, np.arange(len(rwds)))
-            weighted_rwds = np.multiply(weight_factors, rwds)
-            cumulative_weighted_rwds = np.cumsum(weighted_rwds[::-1])[::-1]
-            # normalize discount because `cumulative_weighted_rwds` weighs k-th
-            # state-action value by gamma^(k-1); we do not want this scaling
-            np.divide(cumulative_weighted_rwds, weight_factors, out=cumulative_weighted_rwds)
-            
-            visited_this_episode = np.zeros(total_num_first_visits.shape, dtype=int)
-            for dt in range(episode_end-episode_start-1):
-                t = t_0+dt
-
-                # trajectory too short to estimate Monte-Carlo estimate well
-                if episode_truncated and t+self.cutoff>episode_end:
-                    break
-
-                s_ = self.s_batch[t]
-                a_ = self.a_batch[t]
-                s = vec_to_int(s_, self.obs_space)
-                a = vec_to_int(a_, self.action_space)
-                if visited_this_episode[s,a] == 0:
-                    visited_this_episode[s,a] = 1
-                    num_visits = total_num_first_visits[s,a]
-                    theta = 1./(num_visits+1)
-                    # average 
-                    Q[s,a] = (1.-theta)*Q[s,a] + theta*cumulative_weighted_rwds[dt]
-
-            total_num_first_visits += visited_this_episode
-
-        Ind = total_num_first_visits > 0
-        return (Q, Ind)
+        return q_est_enum, adv_est_enum, num_visit_enum
 
     def get_est_stateaction_value(self, last_pred_value=0, last_state_done=False):
         if self.use_gae:
