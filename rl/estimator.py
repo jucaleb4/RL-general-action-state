@@ -9,7 +9,8 @@ import numpy.linalg as la
 import sklearn.pipeline
 import sklearn.preprocessing
 from sklearn.kernel_approximation import RBFSampler
-
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import train_test_split
 from sklearn.linear_model import SGDRegressor
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
@@ -40,6 +41,45 @@ class FitMode(Enum):
     SAA = 0
     SA = 1
 
+def custom_SGD(solver, X, y, minibatch=32):
+    n_epochs = solver.max_iter
+    n_consec_regress_epochs = 0
+    max_regress = solver.n_iter_no_change
+    frac_validation = solver.validation_fraction
+    tol = solver.tol
+    early_stopping = solver.early_stopping
+
+    train_losses = []
+    test_losses = []
+
+    for i in range(n_epochs):
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i, shuffle=True, test_size=frac_validation)
+        num_batches = int(np.ceil(len(X_train)/ minibatch))
+        for j in range(num_batches):
+            k_s = minibatch*j
+            k_e = min(len(X_train), minibatch*(j+1))
+            # mini-batch update
+            solver.partial_fit(X_train[k_s:k_e], y_train[k_s:k_e])
+
+        y_train_pred = solver.predict(X_train)
+        y_test_pred = solver.predict(X_test)
+
+        train_losses.append(la.norm(y_train_pred - y_train)**2/len(y_train))
+        test_losses.append(la.norm(y_test_pred - y_test)**2/len(y_test))
+
+        if early_stopping and len(test_losses) > 1 and test_losses[-1] > np.min(test_losses)-tol:
+            n_consec_regress_epochs += 1
+        else:
+            n_consec_regress_epochs = 0
+        if n_consec_regress_epochs == max_regress:
+            print("Early stopping (stagnate)")
+            break
+        if train_losses[-1] <= tol:
+            print("Early stopping (train loss small)")
+            break
+
+    return np.array(train_losses), np.array(test_losses)
+
 class LinearFunctionApproximator(FunctionApproximator):
     """
     Function approximator. 
@@ -58,10 +98,9 @@ class LinearFunctionApproximator(FunctionApproximator):
         super().__init__()
         assert num_models > 0
 
-        self.normalize = params["normalize_obs"]
-        self.alpha = params["sgd_alpha"]
+        self.normalize = params.get("normalize_obs", False)
+        self.alpha = params.get("sgd_alpha", 1e-4)
         self.feature_type = params.get("feature_type", "rbf")
-        self._dim = params.get("dim", 100)
         self._deg = params.get("deg", 1)
 
         if self.normalize:
@@ -79,7 +118,16 @@ class LinearFunctionApproximator(FunctionApproximator):
             # ])
             self.featurizer = PolynomialFeatures(self._deg)
         elif self.feature_type == "rbf":
-            self.featurizer = RBFSampler(gamma=1.0, n_components=self.dim)
+            self.featurizer = sklearn.pipeline.FeatureUnion([
+                ("rbf1", RBFSampler(gamma=20, n_components=100)),
+                ("rbf2", RBFSampler(gamma=10, n_components=100)),
+                ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
+                ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
+                ("rbf5", RBFSampler(gamma=1.0, n_components=100)),
+                ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
+                ("rbf7", RBFSampler(gamma=0.1, n_components=100)),
+                ("rbf8", RBFSampler(gamma=0.05, n_components=100)),
+            ])
         else:
             print(f"Unknown feature type {self.feature_type}")
             raise RuntimeError
@@ -89,9 +137,12 @@ class LinearFunctionApproximator(FunctionApproximator):
         self.models = []
         for _ in range(num_models):
             model = SGDRegressor(
-                learning_rate=params["sgd_stepsize"], 
-                max_iter=params["sgd_n_iter"],
-                alpha=params["sgd_alpha"],
+                learning_rate=params.get("sgd_stepsize", "constant"),
+                max_iter=params.get("sgd_n_iter", 1000),
+                alpha=params.get("sgd_alpha",1e-4),
+                warm_start=params.get("sgd_warmstart", False),
+                tol=0.0,
+                n_iter_no_change=params.get("sgd_n_iter", 1000),
             )
 
             # model = Lasso(
@@ -118,18 +169,24 @@ class LinearFunctionApproximator(FunctionApproximator):
         # return self.models[i].predict(features)[0]
         return np.squeeze(self.models[i].predict(features))
     
-    def update(self, X, y, i=0):
+    def update(self, X, y, i=0, use_custom_sgd=False):
         """
         Updates the estimator parameters for a given state and action towards
         the target y.
+
+        :return train_loss: over each epoch
+        :return val_loss: over each epoch
         """
         assert 0 <= i < len(self.models)
 
         features = self.featurize(X)
-        a = self.models[i].fit(features, y)
+        if use_custom_sgd:
+            return custom_SGD(self.models[i], features, y)
+
+        self.models[i].fit(features, y)
 
         pred = self.predict(X, i)
-        loss = (2*len(y))**(-1)*la.norm(pred-y, ord=2)**2
+        loss = la.norm(pred-y, ord=2)**2/len(y)
         return loss
 
     def set_coef(self, coef, i):
@@ -153,7 +210,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         if self.feature_type == "poly":
             return self.featurizer.n_output_features_
         elif self.feature_type == "rbf":
-            return self.featurizer.n_components
+            return 100*len(self.featurizer.transformer_list) # self.featurizer.n_components 
         else:
             raise RuntimeError
 

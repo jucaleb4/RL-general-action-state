@@ -36,8 +36,8 @@ class FOPO(RLAlg):
         self.n_ep = 0
         self.n_step = 0
         self.last_iter_ep = 0
-        self.max_ep = params["max_ep"] if params["max_ep"] > 0 else np.inf
-        self.max_step = params["max_step"] if params["max_step"] > 0 else np.inf
+        self.max_ep = params["max_ep"] if params.get("max_ep",0) > 0 else np.inf
+        self.max_step = params["max_step"] if params.get("max_step",0) > 0 else np.inf
 
     def _learn(self, max_iter):
         """ Runs PMD algorithm for `max_iter`s """
@@ -77,6 +77,9 @@ class FOPO(RLAlg):
         if "rollout_len" not in self.params:
             warnings.warn("Did not pass in 'rollout_len' into params, defaulting to 1000")
             self.params["rollout_len"] = 1000
+        if "max_ep_per_iter" not in self.params:
+            warnings.warn("Did not pass in 'max_ep_per_iter' into params, defaulting to 1000")
+            self.params["max_ep_per_iter"] = 1000
 
     def collect_rollouts(self):
         """ Collect samples for policy evaluation """
