@@ -12,6 +12,7 @@ import gymnasium as gym
 from rl import RLAlg
 from rl import Rollout
 from rl import LinearFunctionApproximator
+from rl import NNFunctionApproximator
 from rl.utils import vec_to_int
 from rl.utils import safe_normalize_row
 from rl.utils import rbf_kernel
@@ -341,10 +342,10 @@ class PMDGeneralStateFiniteAction(FOPO):
         assert action_is_finite, "Action space not finite"
 
         self.n_actions = get_space_cardinality(self.action_space)
-        if "dim" not in params:
-            warnings.warn("Did not pass 'dim' into params, setting dim=100")
+        # if "dim" not in params:
+        #     warnings.warn("Did not pass 'dim' into params, setting dim=100")
         # TODO: Use this for function approximation
-        dim = params.get("dim", 100)
+        # dim = params.get("dim", 100)
         if isinstance(obs_dim, tuple):
             assert len(obs_dim) == 1, "Can only handle 1D observation space"
             self.obs_dim = obs_dim[0]
@@ -364,21 +365,29 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.env_warmup()
         (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
         X = s_visited
-        self.fa = LinearFunctionApproximator(self.n_actions, X, params)
-        self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
-        self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
-        self.theta_accum = np.copy(self.last_thetas)
-        self.intercept_accum = np.copy(self.last_intercepts)
-        self.last_theta_accum = np.copy(self.theta_accum)
-        self.last_intercept_accum = np.copy(self.intercept_accum)
+        if self.params["fa_type"] == "linear":
+            self.fa = LinearFunctionApproximator(self.n_actions, X, params)
+            self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
+            self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
+            self.theta_accum = np.copy(self.last_thetas)
+            self.intercept_accum = np.copy(self.last_intercepts)
+            self.last_theta_accum = np.copy(self.theta_accum)
+            self.last_intercept_accum = np.copy(self.intercept_accum)
+        else:
+            self.fa_Q_acc_k = NNFunctionApproximator(self.n_actions, 
+                input_dim=self.obs_dim, output_dim=1, params=params)
+            self.fa_Q_k = NNFunctionApproximator(self.n_actions, 
+                input_dim=self.obs_dim, output_dim=1, params=params)
 
         self.last_max_q_est = ...
         self.last_max_adv_est = ...
         self.last_policy_at_s = np.ones(self.n_actions, dtype=float)/self.n_actions
+        self._last_s_visited_at_a = [None] * self.n_actions
 
     def check_PMDGeneralStateFiniteAction_params(self):
-        # TODO: Remove this is doing NN or SGD
-        return
+        if "fa_type" not in self.params:
+            warnings.warn("No fa_type found in params, defaulting to linear")
+            self.params["fa_type"] = "linear"
 
     def _get_policy(self, s):
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
@@ -437,20 +446,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
 
-        X = s_visited
         y = adv_est if self.params["use_advantage"] else q_est
-
-        # y -= np.mean(y)
-        # only keep high value
-        # pos_y = y[np.where(y>0)]
-        # neg_y = y[np.where(y<0)]
-        # keep_idx_pos = np.where(y > np.median(pos_y))
-        # keep_idx_neg = np.where(y < np.median(neg_y))
-        # keep_idx = np.append(keep_idx_pos, keep_idx_neg)
-        # X = X[keep_idx]
-        # y = y[keep_idx]
-        # a_visited = a_visited[keep_idx]
-        # s_visited = s_visited[keep_idx]
 
         self.std_y = np.std(y)
         if self.params["normalize_sa_val"]:
@@ -464,6 +460,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             if len(action_i_idx) == 0:
                 not_visited_actions.append(i)
                 continue
+            self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
             loss += self.fa.update(X[action_i_idx], y[action_i_idx], i)
             self.last_thetas[i] = np.copy(self.fa.get_coef(i))
             self.last_intercepts[i] = np.copy(self.fa.get_intercept(i))
@@ -489,12 +486,22 @@ class PMDGeneralStateFiniteAction(FOPO):
     def kl_policy_update(self):
         """ Policy update with PMD and KL divergence """
         self.updated_at_least_once = True
-        eta = self.get_stepsize_schedule()
+        eta_t = self.get_stepsize_schedule()
 
-        self.last_theta_accum = np.copy(self.theta_accum)
-        self.last_intercept_accum = np.copy(self.intercept_accum)
-        self.theta_accum += eta * self.last_thetas
-        self.intercept_accum += eta * self.last_intercepts
+        if self.params["fa_type"] == "linear":
+            self.last_theta_accum = np.copy(self.theta_accum)
+            self.last_intercept_accum = np.copy(self.intercept_accum)
+            self.theta_accum += eta_t * self.last_thetas
+            self.intercept_accum += eta_t * self.last_intercepts
+        else:
+            for i in range(self.n_actions):
+                X_i = self._last_s_visited_at_a[i]
+                # append random samples as well
+                Q_acc_k_pred = self.fa_Q_acc_k.predict(X_i)
+                Q_k_pred     = self.fa_Q_k.predict(X_i)
+                y_i = Q_acc_k_pred + eta_t*Q_k_pred
+                train_losses, test_losses = self.fa_Q_acc_k.update(X_i, y_i, i)
+                return train_losses, test_losses
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """

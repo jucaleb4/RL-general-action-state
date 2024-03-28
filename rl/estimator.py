@@ -2,6 +2,7 @@ from abc import ABC
 from abc import abstractmethod
 
 import warnings
+import random
 
 import numpy as np
 import numpy.linalg as la
@@ -187,7 +188,7 @@ class LinearFunctionApproximator(FunctionApproximator):
 
         pred = self.predict(X, i)
         loss = la.norm(pred-y, ord=2)**2/len(y)
-        return loss
+        return loss, 0
 
     def set_coef(self, coef, i):
          assert 0 <= i < len(self.models)
@@ -236,8 +237,9 @@ class NeuralNetwork(nn.Module):
         return logits
 
 class NNFunctionApproximator(FunctionApproximator):
-    def __init__(self, input_dim, output_dim, **kwargs):
+    def __init__(self, num_models, input_dim, output_dim, params):
         super().__init__()
+        assert num_models > 0
 
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -248,27 +250,38 @@ class NNFunctionApproximator(FunctionApproximator):
             else "cpu"
         )
 
-        self.model = NeuralNetwork(input_dim, output_dim).to(self.device)
+        self.models = []
+        self.loss_fns = []
+        self.optimizers = []
+        for _ in range(num_models):
+            model = NeuralNetwork(input_dim, output_dim).to(self.device)
 
-        self.loss_fn = nn.MSELoss()
-        self.optimizer = torch.optim.SGD(
-            self.model.parameters(), 
-            lr=1e-4,
-            # momentum=5e-1
-        )
-        # optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+            loss_fn = nn.MSELoss()
+            optimizer = torch.optim.SGD(
+                model.parameters(), 
+                lr=1e-3,
+                nesterov=True,
+                momentum=1e-5,
+                # momentum=5e-1
+            )
+            optimizer = torch.optim.Adam(model.parameters())
 
-        self.max_grad_norm = max(1e-10, kwargs.get("max_grad_norm", np.inf))
+            self.models.append(model)
+            self.loss_fns.append(loss_fn)
+            self.optimizers.append(optimizer)
+
+        self.max_grad_norm = max(1e-10, params.get("max_grad_norm", np.inf))
+        self.sgd_n_iter = params.get("sgd_n_iter", 100)
 
     def predict(self, X, i=0):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
-        self.model.eval()
+        self.models[i].eval()
 
         y = []
         with torch.no_grad():
-            for i,X_i in enumerate(X):
-                X_i = torch.from_numpy(X_i).to(self.device).float()
-                y_pred = self.model(X_i)
+            for j,X_j in enumerate(X):
+                X_j = torch.from_numpy(X_j).to(self.device).float()
+                y_pred = self.models[i](X_j)
                 # https://stackoverflow.com/questions/55466298/pytorch-cant-call-numpy-on-variable-that-requires-grad-use-var-detach-num
                 # y.append(y_pred.numpy())
                 y.append(y_pred.detach().numpy())
@@ -276,7 +289,7 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=32, n_epochs=10):
+    def update(self, X, y, i=0, batch_size=32, skip_losses=False):
         try:
             X = np.array(X)
             y = np.array(y)
@@ -287,67 +300,79 @@ class NNFunctionApproximator(FunctionApproximator):
         if batch_size < 1:
             warnings.warn("Batch size not positive, setting to 1")
             batch_size = 1
-        if n_epochs < 1:
-            warnings.warn("n_epochs not positive, setting to 1")
-            n_epochs = 1
 
+        # TODO: Make these customizable
+        dataset = list(zip(X,y))
+        validation_frac = 0.1
+        val_idx= int(len(dataset)*(1.-validation_frac))
+
+        train_losses = []
+        test_losses = []
         batch_size = min(len(X), batch_size)
+        for _ in range(self.sgd_n_iter):
+            # TODO: Better way to do cross validation
+            random.shuffle(dataset)
+            X_train, y_train = list(zip(*dataset[:val_idx]))
+            X_test, y_test = list(zip(*dataset[val_idx:]))
+            train_set = list(zip(X_train, y_train))
 
-        training_set = list(zip(X,y))
-        training_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True)
+            train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+            self._train_one_epoch(train_loader, i=i)
 
-        # TODO: Cross-validation
-        # validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=4, shuffle=False)
+            if skip_losses: 
+                continue
 
-        self.model.train()
-        last_loss = 0.
-        for epoch_i in range(n_epochs):
-            last_loss = self._train_one_epoch(training_loader, epoch_i)
+            y_train_pred = self.predict(X_train, i)
+            train_losses.append(la.norm(y_train-y_train_pred)**2/len(y_train))
+            if len(y_test) > 0:
+                y_test_pred = self.predict(X_test, i)
+                test_losses.append(la.norm(y_test-y_test_pred)**2/len(y_test))
 
-        return last_loss
+        return np.array(train_losses), np.array(test_losses)
 
-    def _train_one_epoch(self, training_loader, epoch_idx):
+    def _train_one_epoch(self, train_loader, i):
         running_loss = 0.
         last_loss = 0.
 
-        for i, data in enumerate(training_loader):
-            X_i, y_i = data
+        self.models[i].train()
+        for j, data in enumerate(train_loader):
+            X_j, y_j = data
 
             # https://discuss.pytorch.org/t/runtimeerror-mat1-and-mat2-must-have-the-same-dtype/166759
-            X_i = X_i.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
-            y_i = y_i.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
+            X_j = X_j.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
+            y_j = y_j.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
 
             # Zero your gradients for every batch!
-            self.optimizer.zero_grad()
+            self.optimizers[i].zero_grad()
 
-            pred_i = self.model(X_i)
+            pred_j = self.models[i](X_j)
             # TODO: Is this the right way to do it?
-            pred_i = torch.squeeze(pred_i)
-            loss = self.loss_fn(pred_i, y_i)
+            pred_j = torch.squeeze(pred_j)
+            loss = self.loss_fns[i](pred_j, y_j)
             loss.backward()
 
             if self.max_grad_norm < np.inf:
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                nn.utils.clip_grad_norm_(self.models[i].parameters(), self.max_grad_norm)
 
-            self.optimizer.step()
+            self.optimizers[i].step()
 
             # Gather data and report
             last_loss = loss.item()
 
         return last_loss
 
-    def grad(self, X, max_grad_norm=np.inf):
+    def grad(self, X, max_grad_norm=np.inf, i=0):
         """ 
         https://discuss.pytorch.org/t/newbie-getting-the-gradient-with-respect-to-the-input/12709/6
         """
         grad_X = []
-        for i, X_i in enumerate(X):
+        for j, X_j in enumerate(X):
             X_i = torch.from_numpy(X_i).to(self.device).float()
             X_i.requires_grad = True
             # TODO: Better way to remove this?
             X_i.retain_grad()
-            y_i = self.model(X_i)
-            y_i.backward(torch.ones_like(y_i)) 
+            y_i = self.models[i](X_j)
+            y_i.backward(torch.ones_like(y_j)) 
             grad_X.append(X_i.grad.numpy())
 
         grad_X = np.squeeze(np.array(grad_X))
