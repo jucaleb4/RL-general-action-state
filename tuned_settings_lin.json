@@ -1,0 +1,23 @@
+{
+    "alg": "pmd",
+    "env_name": "LunarLander-v2",
+    "base_stepsize": 0.05,
+    "stepsize": "decreasing",
+    "mu_h": 0,
+    "gamma": 0.9,
+    "use_advantage": true,
+    "normalize_obs": false,
+    "normalize_rwd": false,
+    "rollout_len": 1024,
+    "sgd_n_iter": 11,
+    "sgd_alpha": 0.001, 
+    "sgd_stepsize": "constant",
+    "max_iter": 100,
+    "max_ep": 10000,
+    "max_step": -1,
+    "max_ep_per_iter": -1,
+    "normalize_sa_val": false,
+    "save_logs": true,
+    "fa_type": "linear",
+    "sgd_warmstart": true
+}

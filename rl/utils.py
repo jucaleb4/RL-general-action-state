@@ -124,9 +124,10 @@ class RunningStat():
 
     def push(self, x):
         self._k += 1
-        diff = x-self.M
-        self._M += (diff)/self._k
-        self._S += np.dot(diff, diff)
+        old_diff = x-self._M
+        self._M += (old_diff)/self._k
+        if self._k > 0:
+            self._S += np.multiply(old_diff, x-self._M)
 
     def clear(self):
         self.M[:] = 0

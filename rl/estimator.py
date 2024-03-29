@@ -223,11 +223,23 @@ class NeuralNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 512),
+            nn.Linear(input_dim, 64),
             nn.Tanh(),
-            nn.Linear(512, 512),
+            nn.Linear(64, 128),
             nn.Tanh(),
-            nn.Linear(512, output_dim)
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 64),
+            nn.Tanh(),
+            nn.Linear(64, output_dim)
         )
 
     def forward(self, x):
@@ -264,11 +276,7 @@ class NNFunctionApproximator(FunctionApproximator):
                 momentum=1e-5,
                 # momentum=5e-1
             )
-            optimizer = torch.optim.Adam(
-                model.parameters(),
-                lr=0.0003,
-                eps=1e-5,
-            )
+            optimizer = torch.optim.Adam(model.parameters())
 
             self.models.append(model)
             self.loss_fns.append(loss_fn)
@@ -345,9 +353,12 @@ class NNFunctionApproximator(FunctionApproximator):
             X_j = X_j.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
             y_j = y_j.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
 
-            pred_j = self.models[i](X_j)
+            pred_j = self.models[i](torch.atleast_2d(X_j))
             # TODO: Is this the right way to do it?
-            pred_j = torch.squeeze(pred_j)
+            if len(pred_j.shape) > 1:
+                pred_j = torch.squeeze(pred_j)
+            if len(pred_j.shape) == 0:
+                continue
             loss = self.loss_fns[i](pred_j, y_j)
 
             # Zero your gradients for every batch!

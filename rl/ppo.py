@@ -19,8 +19,9 @@ class PPO(RLAlg):
     def _learn(self, n_iter):
         self.env = Monitor(env=self.env)
     
+        max_ep = self.params["max_ep"] if self.params["max_ep"] > 0 else np.inf
         callback_max_episodes = StopTrainingOnMaxEpisodes(
-            max_episodes=n_iter, 
+            max_episodes=max_ep, 
             verbose=1
         )
         model = sb3.PPO(
