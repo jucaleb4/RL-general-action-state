@@ -434,14 +434,14 @@ class PMDGeneralStateFiniteAction(FOPO):
         eps = self.params.get("eps_explore", 0)
         assert 0 <= eps <= 1
 
-        pi = (1.-eps)*self._get_policy(s) + eps/self.n_actions
+        pi = (1.-eps)*self._get_policy(self.normalize_obs(s)) + eps/self.n_actions
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """
-        self.obs_runstat.update()
-        self.action_runstat.update()
-        self.rwd_runstat.update()
+        # self.obs_runstat.update()
+        # self.action_runstat.update()
+        # self.rwd_runstat.update()
 
         if self.params.get("train_method", "mc") == "mc":
             self.monte_carlo_Q()
@@ -562,6 +562,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         [self.normalize_obs(s) for s in s_visited]
         y = adv_est if self.params.get("use_advantage",False) else q_est
+        [self.normalize_rwd(y_i) for y_i in y]
         if self.params.get("normalize_sa_val", None):
             y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
@@ -623,7 +624,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.msg += f"  {'delta_bias':<{l}}: {bias_change:.4e}\n"
         self.msg += f"  {'delta_policy':<{l}}: {self.last_policy_at_s}->{policy_at_s}\n"
 
-        self.last_policy_at_s = np.copy(policy_at_s)
+        self.last_policy_at_s = self._get_policy(self._curr_s)
         self._last_s = np.copy(self._curr_s)
 
 # class PMDGeneralStateAction(PMD):

@@ -13,12 +13,11 @@
     "sgd_alpha": 0.001, 
     "sgd_stepsize": "constant",
     "max_iter": 100,
-    "max_ep": 1000,
+    "max_ep": 10000,
     "max_step": -1,
     "max_ep_per_iter": -1,
     "normalize_sa_val": false,
     "save_logs": true,
-    "fa_type": "nn",
-    "sgd_warmstart": true,
-    "max_grad_norm": 1
+    "fa_type": "linear",
+    "sgd_warmstart": true
 }
