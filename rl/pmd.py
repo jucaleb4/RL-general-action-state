@@ -386,17 +386,17 @@ class PMDGeneralStateFiniteAction(FOPO):
         (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
         X = s_visited
         if self.params["fa_type"] == "linear":
-            self.fa = LinearFunctionApproximator(self.n_actions, X, params)
-            self.last_thetas = np.zeros((self.n_actions, self.fa.dim), dtype=float)
+            self.fa_Q = LinearFunctionApproximator(self.n_actions, X, params)
+            self.last_thetas = np.zeros((self.n_actions, self.fa_Q.dim), dtype=float)
             self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
             self.theta_accum = np.copy(self.last_thetas)
             self.intercept_accum = np.copy(self.last_intercepts)
             self.last_theta_accum = np.copy(self.theta_accum)
             self.last_intercept_accum = np.copy(self.intercept_accum)
         else:
-            self.fa_Q_acc_k = NNFunctionApproximator(self.n_actions, 
+            self.fa_Q = NNFunctionApproximator(self.n_actions, 
                 input_dim=self.obs_dim, output_dim=1, params=params)
-            self.fa_Q_k = NNFunctionApproximator(self.n_actions, 
+            self.fa_Q_accum = NNFunctionApproximator(self.n_actions, 
                 input_dim=self.obs_dim, output_dim=1, params=params)
 
         self.last_max_q_est = ...
@@ -412,9 +412,12 @@ class PMDGeneralStateFiniteAction(FOPO):
     def _get_policy(self, s):
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
         for i in range(self.n_actions):
-            self.fa.set_coef(self.theta_accum[i], i)
-            self.fa.set_intercept(self.intercept_accum[i], i)
-            log_policy_at_s[i] = self.fa.predict(np.atleast_2d(s), i)
+            if self.params["fa_type"] == "linear":
+                self.fa_Q.set_coef(self.theta_accum[i], i)
+                self.fa_Q.set_intercept(self.intercept_accum[i], i)
+                log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s), i)
+            else:
+                log_policy_at_s[i] = self.fa_Q_accum.predict(np.atleast_2d(s), i)
         # TEMP (more robust way to do regularization)
         mu_h = self.params.get("mu_h", 0)
         log_policy_at_s *= (mu_h+1)**(-self.t-1)
@@ -463,16 +466,13 @@ class PMDGeneralStateFiniteAction(FOPO):
             self._last_state_done,
         )
 
-        self.last_max_q_est = np.max(np.abs(q_est))
-        self.last_max_adv_est = np.max(np.abs(adv_est))
-        self.sto_Q_max_arr.append(self.last_max_q_est)
-
-        X = s_visited
+        X = np.array([self.normalize_obs(s) for s in s_visited])
         y = adv_est if self.params["use_advantage"] else q_est
-
-        self.std_y = np.std(y)
         if self.params["normalize_sa_val"]:
             y = (y-np.mean(y))/(np.std(y) + 1e-16)
+        self.last_max_q_est = np.max(np.abs(q_est))
+        self.last_max_adv_est = np.max(np.abs(adv_est))
+        self.sto_Q_max_arr.append(np.max(y))
 
         # extract fitted parameters
         not_visited_actions = []
@@ -483,10 +483,17 @@ class PMDGeneralStateFiniteAction(FOPO):
                 not_visited_actions.append(i)
                 continue
             self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
-            train_loss, _ = self.fa.update(X[action_i_idx], y[action_i_idx], i)
-            loss += train_loss 
-            self.last_thetas[i] = self.fa.get_coef(i)
-            self.last_intercepts[i] = self.fa.get_intercept(i)
+            if self.params["fa_type"] == "linear":
+                train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i)
+            else:
+                train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i, validation_frac=0)
+            if isinstance(train_loss, float) or isinstance(train_loss, int):
+                loss += train_loss 
+            else:
+                loss += train_loss[0]
+            if self.params["fa_type"] == "linear":
+                self.last_thetas[i] = self.fa_Q.get_coef(i)
+                self.last_intercepts[i] = self.fa_Q.get_intercept(i)
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
 
@@ -519,11 +526,13 @@ class PMDGeneralStateFiniteAction(FOPO):
         else:
             for i in range(self.n_actions):
                 X_i = self._last_s_visited_at_a[i]
+                X_i_append = np.array([self.normalize_obs(self.env.observation_space.sample()) for _ in range(len(X_i))])
+                X_i = np.vstack((X_i, X_i_append))
                 # append random samples as well
-                Q_acc_k_pred = self.fa_Q_acc_k.predict(X_i)
-                Q_k_pred     = self.fa_Q_k.predict(X_i)
+                Q_acc_k_pred = self.fa_Q_accum.predict(X_i, i)
+                Q_k_pred     = self.fa_Q.predict(X_i, i)
                 y_i = Q_acc_k_pred + eta_t*Q_k_pred
-                train_losses, test_losses = self.fa_Q_acc_k.update(X_i, y_i, i)
+                train_losses, test_losses = self.fa_Q_accum.update(X_i, y_i, i, validation_frac=0)
                 return train_losses, test_losses
 
     def tsallis_policy_update(self):
@@ -550,13 +559,16 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.params["rollout_len"] =  old_rollout_len
 
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
+        [self.normalize_obs(s) for s in s_visited]
+        y = adv_est if self.params["use_advantage"] else q_est
+        if self.params["normalize_sa_val"]:
+            y = (y-np.mean(y))/(np.std(y) + 1e-16)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
-        self.sto_Q_max_arr.append(self.last_max_q_est)
+        self.sto_Q_max_arr.append(np.max(y))
 
-        # TODO: Can we delete these?
-        # self.obs_runstat.update()
-        # self.action_runstat.update()
+        self.obs_runstat.update()
+        self.action_runstat.update()
         self.rwd_runstat.update()
 
         print("Finished normalization warmup")
@@ -586,24 +598,26 @@ class PMDGeneralStateFiniteAction(FOPO):
             return 0
         q_s = []
         for i in range(self.n_actions):
-            self.fa.set_coef(self.last_thetas[i], i)
-            self.fa.set_intercept(self.last_intercepts[i], i)
-            q_s.append(self.fa.predict(np.atleast_2d(s), i))
+            if self.params["fa_type"] == "linear":
+                self.fa_Q.set_coef(self.last_thetas[i], i)
+                self.fa_Q.set_intercept(self.last_intercepts[i], i)
+            q_s.append(self.fa_Q.predict(np.atleast_2d(s), i))
         return np.dot(q_s, self._get_policy(s))
 
     def prepare_log(self):
         l = 15
         super().prepare_log()
 
-        coef_change = la.norm(self.last_theta_accum - self.theta_accum)
-        bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)
         policy_at_s = self._get_policy(self._last_s)
 
         self.msg += "train/\n"
         self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
         self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
-        self.msg += f"  {'delta_coef':<{l}}: {coef_change:.4e}\n"
-        self.msg += f"  {'delta_bias':<{l}}: {bias_change:.4e}\n"
+        if self.params["fa_type"] == "linear":
+            coef_change = la.norm(self.last_theta_accum - self.theta_accum)
+            bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)
+            self.msg += f"  {'delta_coef':<{l}}: {coef_change:.4e}\n"
+            self.msg += f"  {'delta_bias':<{l}}: {bias_change:.4e}\n"
         self.msg += f"  {'delta_policy':<{l}}: {self.last_policy_at_s}->{policy_at_s}\n"
 
         self.last_policy_at_s = np.copy(policy_at_s)

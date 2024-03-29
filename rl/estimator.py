@@ -99,14 +99,14 @@ class LinearFunctionApproximator(FunctionApproximator):
         super().__init__()
         assert num_models > 0
 
-        self.normalize = params.get("normalize_obs", False)
+        # self.normalize = params.get("normalize_obs", False)
         self.alpha = params.get("sgd_alpha", 1e-4)
         self.feature_type = params.get("feature_type", "rbf")
         self._deg = params.get("deg", 1)
 
-        if self.normalize:
-            self.scaler = sklearn.preprocessing.StandardScaler()
-            self.scaler.fit(X)
+        # if self.normalize:
+        #     self.scaler = sklearn.preprocessing.StandardScaler()
+        #     self.scaler.fit(X)
 
 
         if self.feature_type == "poly":
@@ -159,8 +159,8 @@ class LinearFunctionApproximator(FunctionApproximator):
             self.models.append(model)
     
     def featurize(self, X):
-        if self.normalize:
-            X = self.scaler.transform(X)
+        # if self.normalize:
+        #     X = self.scaler.transform(X)
         return self.featurizer.transform(X)
     
     def predict(self, x, i=0):
@@ -289,7 +289,7 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=32, skip_losses=False):
+    def update(self, X, y, i=0, batch_size=32, validation_frac=0.1, skip_losses=False):
         try:
             X = np.array(X)
             y = np.array(y)
@@ -303,7 +303,6 @@ class NNFunctionApproximator(FunctionApproximator):
 
         # TODO: Make these customizable
         dataset = list(zip(X,y))
-        validation_frac = 0.1
         val_idx= int(len(dataset)*(1.-validation_frac))
 
         train_losses = []
@@ -313,7 +312,6 @@ class NNFunctionApproximator(FunctionApproximator):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
             X_train, y_train = list(zip(*dataset[:val_idx]))
-            X_test, y_test = list(zip(*dataset[val_idx:]))
             train_set = list(zip(X_train, y_train))
 
             train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
@@ -324,7 +322,8 @@ class NNFunctionApproximator(FunctionApproximator):
 
             y_train_pred = self.predict(X_train, i)
             train_losses.append(la.norm(y_train-y_train_pred)**2/len(y_train))
-            if len(y_test) > 0:
+            if val_idx < len(dataset):
+                X_test, y_test = list(zip(*dataset[val_idx:]))
                 y_test_pred = self.predict(X_test, i)
                 test_losses.append(la.norm(y_test-y_test_pred)**2/len(y_test))
 
