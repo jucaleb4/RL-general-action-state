@@ -39,6 +39,7 @@ class FOPO(RLAlg):
         self.last_iter_ep = 0
         self.max_ep = params["max_ep"] if params.get("max_ep",0) > 0 else np.inf
         self.max_step = params["max_step"] if params.get("max_step",0) > 0 else np.inf
+        self.sto_Q_max_arr = []
 
     def _learn(self, max_iter):
         """ Runs PMD algorithm for `max_iter`s """
@@ -151,14 +152,33 @@ class FOPO(RLAlg):
             if base_stepsize <= 0:
                 base_stepsize = eta_0
             if self.params.get("stepsize", "constant") == "constant":
-                return base_stepsize
-            if self.params["stepsize"] == "decreasing":
+                return base_stepsize/np.sqrt(self.params["max_iter"])
+            elif self.params["stepsize"]  == "adapt_constant":
+                # TODO: Incorporate regularization
+                tQ_norm_sq = self.stoch_Q_second_moment()
+                M_h = self.params.get("M_h",0)
+                lam = np.sqrt(2*np.log(self.n_actions)/(2*tQ_norm_sq))
+                return lam/np.sqrt(self.params["max_iter"])
+            elif self.params["stepsize"] == "decreasing":
                 return base_stepsize * float(self.t+1)**(-0.5)
+            elif self.params["stepsize"] == "adapt_decreasing":
+                tQ_norm_sq = self.stoch_Q_second_moment()
+                M_h = self.params.get("M_h",0)
+                lam = np.sqrt(2*np.log(self.n_actions)/(2*tQ_norm_sq))
+                return lam/np.sqrt(self.t+1)
         else:
             base_stepsize = mu_h/(self.t+1)
             stepsize = (mu_h + 1./base_stepsize)**(-1)
             stepsize *= (mu_h+1)**(self.t+1)
             return stepsize
+
+    def stoch_Q_second_moment(self, mv_avg_len=30):
+        l = min(mv_avg_len, len(self.sto_Q_max_arr))
+        if l == 0:
+            raise Exception("You must warm start `self.sto_Q_max_arr` before using adaptive")
+        if l == 1:
+            return self.sto_Q_max_arr[0]**2
+        return np.var(self.sto_Q_max_arr[-l:])
 
     def env_warmup(self):
         return
@@ -445,6 +465,7 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
+        self.sto_Q_max_arr.append(self.last_max_q_est)
 
         X = s_visited
         y = adv_est if self.params["use_advantage"] else q_est
@@ -524,9 +545,14 @@ class PMDGeneralStateFiniteAction(FOPO):
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["rollout_len"]
-        self.params["rollout_len"] =  1
+        self.params["rollout_len"] = max(2048, old_rollout_len)
         self.collect_rollouts()
         self.params["rollout_len"] =  old_rollout_len
+
+        (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
+        self.last_max_q_est = np.max(np.abs(q_est))
+        self.last_max_adv_est = np.max(np.abs(adv_est))
+        self.sto_Q_max_arr.append(self.last_max_q_est)
 
         # TODO: Can we delete these?
         # self.obs_runstat.update()
