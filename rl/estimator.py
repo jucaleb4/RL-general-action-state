@@ -264,7 +264,11 @@ class NNFunctionApproximator(FunctionApproximator):
                 momentum=1e-5,
                 # momentum=5e-1
             )
-            optimizer = torch.optim.Adam(model.parameters())
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=0.0003,
+                eps=1e-5,
+            )
 
             self.models.append(model)
             self.loss_fns.append(loss_fn)
@@ -341,13 +345,13 @@ class NNFunctionApproximator(FunctionApproximator):
             X_j = X_j.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
             y_j = y_j.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
 
-            # Zero your gradients for every batch!
-            self.optimizers[i].zero_grad()
-
             pred_j = self.models[i](X_j)
             # TODO: Is this the right way to do it?
             pred_j = torch.squeeze(pred_j)
             loss = self.loss_fns[i](pred_j, y_j)
+
+            # Zero your gradients for every batch!
+            self.optimizers[i].zero_grad()
             loss.backward()
 
             if self.max_grad_norm < np.inf:
