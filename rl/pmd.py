@@ -401,6 +401,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_max_adv_est = ...
         self.last_policy_at_s = np.ones(self.n_actions, dtype=float)/self.n_actions
         self._last_s_visited_at_a = [None] * self.n_actions
+        self._last_y_a = [None] * self.n_actions
 
     def check_PMDGeneralStateFiniteAction_params(self):
         if "fa_type" not in self.params:
@@ -481,6 +482,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 not_visited_actions.append(i)
                 continue
             self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
+            self._last_y_a[i] = np.copy(y[action_i_idx])
             if self.params["fa_type"] == "linear":
                 train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i)
             else:
@@ -522,18 +524,22 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.theta_accum += eta_t * self.last_thetas
             self.intercept_accum += eta_t * self.last_intercepts
         else:
-            loss = 0
+            train_loss = 0
+            test_loss = 0
             for i in range(self.n_actions):
                 X_i = self._last_s_visited_at_a[i]
-                X_i_append = np.array([self.normalize_obs(self.env.observation_space.sample()) for _ in range(len(X_i))])
-                X_i = np.vstack((X_i, X_i_append))
+                # X_i_append = np.array([self.normalize_obs(self.env.observation_space.sample()) for _ in range(len(X_i))])
+                # X_i = np.vstack((X_i, X_i_append))
                 # append random samples as well
-                Q_acc_k_pred = self.fa_Q_accum.predict(X_i, i)
-                Q_k_pred     = self.fa_Q.predict(X_i, i)
-                y_i = Q_acc_k_pred + eta_t*Q_k_pred
-                train_losses, test_losses = self.fa_Q_accum.update(X_i, y_i, i, validation_frac=0)
-                loss += train_losses[-1]
-            self.last_po_loss = loss/self.n_actions
+                Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
+                y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
+                target_i = Q_acc_pred + eta_t*y_i
+                # print(la.norm(Q_acc_k_pred)**2/len(Q_acc_k_pred), eta_t*la.norm(Q_k_pred)**2/len(Q_k_pred))
+                train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i)
+                train_loss += train_losses[-1]
+                test_loss += test_losses[-1]
+            self.last_po_loss = train_loss/self.n_actions
+            self.last_po_test_loss = test_loss/self.n_actions
             return train_losses, test_losses
 
     def tsallis_policy_update(self):
@@ -615,7 +621,8 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.msg += "train/\n"
         self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
         if self.params["fa_type"] == "nn":
-            self.msg += f"  {'po_loss':<{l}}: {self.last_po_loss:.4e}\n"
+            self.msg += f"  {'po_train_loss':<{l}}: {self.last_po_loss:.4e}\n"
+            self.msg += f"  {'po_test_loss':<{l}}: {self.last_po_test_loss:.4e}\n"
         self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
         if self.params["fa_type"] == "linear":
             coef_change = la.norm(self.last_theta_accum - self.theta_accum)

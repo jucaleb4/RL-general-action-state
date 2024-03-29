@@ -223,23 +223,13 @@ class NeuralNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 64),
+            nn.Linear(input_dim, 100),
             nn.Tanh(),
-            nn.Linear(64, 128),
+            nn.Linear(100, 100),
             nn.Tanh(),
-            nn.Linear(128, 128),
+            nn.Linear(100, 100),
             nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 64),
-            nn.Tanh(),
-            nn.Linear(64, output_dim)
+            nn.Linear(100, output_dim)
         )
 
     def forward(self, x):
@@ -301,7 +291,7 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=32, validation_frac=0.1, skip_losses=False):
+    def update(self, X, y, i=0, batch_size=32, sgd_n_iter=-1, validation_frac=0.1, skip_losses=False):
         try:
             X = np.array(X)
             y = np.array(y)
@@ -320,7 +310,8 @@ class NNFunctionApproximator(FunctionApproximator):
         train_losses = []
         test_losses = []
         batch_size = min(len(X), batch_size)
-        for _ in range(self.sgd_n_iter):
+        sgd_n_iter = sgd_n_iter if sgd_n_iter > 0 else self.sgd_n_iter
+        for _ in range(sgd_n_iter):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
             X_train, y_train = list(zip(*dataset[:val_idx]))
