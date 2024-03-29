@@ -239,6 +239,12 @@ class Rollout:
         # if termianted, not cost-to-go
         cum_rwd = last_pred_value * (1-int(last_state_done))
         for t in reversed(range(self.time_ct)):
+            # if t == self.time_ct-1:
+            #     q_est[t] = self.r_batch[t] + self.gamma * cum_rwd
+            # else:
+            #     q_est[t] = self.r_batch[t] + self.gamma * self.v_batch[t+1]
+            # adv_est[t] = q_est[t] - self.v_batch[t]
+                
             # if we recieved done, reset cum_rwd for new episode
             if t < self.time_ct-1 and self.done_batch[t]:
                 cum_rwd = 0

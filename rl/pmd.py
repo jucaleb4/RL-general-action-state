@@ -446,6 +446,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
 
+        X = s_visited
         y = adv_est if self.params["use_advantage"] else q_est
 
         self.std_y = np.std(y)
@@ -461,9 +462,10 @@ class PMDGeneralStateFiniteAction(FOPO):
                 not_visited_actions.append(i)
                 continue
             self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
-            loss += self.fa.update(X[action_i_idx], y[action_i_idx], i)
-            self.last_thetas[i] = np.copy(self.fa.get_coef(i))
-            self.last_intercepts[i] = np.copy(self.fa.get_intercept(i))
+            train_loss, _ = self.fa.update(X[action_i_idx], y[action_i_idx], i)
+            loss += train_loss 
+            self.last_thetas[i] = self.fa.get_coef(i)
+            self.last_intercepts[i] = self.fa.get_intercept(i)
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
 

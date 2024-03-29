@@ -192,19 +192,19 @@ class LinearFunctionApproximator(FunctionApproximator):
 
     def set_coef(self, coef, i):
          assert 0 <= i < len(self.models)
-         self.models[i].coef_ = coef
+         self.models[i].coef_ = np.copy(coef)
 
     def set_intercept(self, intercept, i):
          assert 0 <= i < len(self.models)
-         self.models[i].intercept_ = intercept
+         self.models[i].intercept_ = np.copy(intercept)
 
     def get_coef(self, i):
          assert 0 <= i < len(self.models)
-         return self.models[i].coef_
+         return np.copy(self.models[i].coef_)
 
     def get_intercept(self, i):
          assert 0 <= i < len(self.models)
-         return self.models[i].intercept_
+         return np.copy(self.models[i].intercept_)
 
     @property
     def dim(self):
