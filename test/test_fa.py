@@ -101,7 +101,7 @@ def test_learning_value_nn_function():
         y_i = y[action_i_idx]
 
         s_time = time.time()
-        train_loss, val_loss = alg.fa_Q_k.update(X_i, y_i, i)
+        train_loss, val_loss = alg.fa_Q.update(X_i, y_i, i)
         custom_time += time.time() - s_time
         train_losses[i,:len(train_loss)] = train_loss
         val_losses[i,:len(val_loss)] = val_loss

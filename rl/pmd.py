@@ -149,8 +149,6 @@ class FOPO(RLAlg):
         if mu_h == 0:
             eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
             base_stepsize = self.params.get("base_stepsize", eta_0)
-            if base_stepsize <= 0:
-                base_stepsize = eta_0
             if self.params.get("stepsize", "constant") == "constant":
                 return base_stepsize/np.sqrt(self.params["max_iter"])
             elif self.params["stepsize"]  == "adapt_constant":
@@ -467,9 +465,9 @@ class PMDGeneralStateFiniteAction(FOPO):
         )
 
         X = np.array([self.normalize_obs(s) for s in s_visited])
-        y = adv_est if self.params["use_advantage"] else q_est
-        if self.params["normalize_sa_val"]:
-            y = (y-np.mean(y))/(np.std(y) + 1e-16)
+        y = adv_est if self.params.get("use_advantage",False) else q_est
+        if self.params.get("normalize_sa_val", None):
+            y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
         self.sto_Q_max_arr.append(np.max(y))
@@ -524,6 +522,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.theta_accum += eta_t * self.last_thetas
             self.intercept_accum += eta_t * self.last_intercepts
         else:
+            loss = 0
             for i in range(self.n_actions):
                 X_i = self._last_s_visited_at_a[i]
                 X_i_append = np.array([self.normalize_obs(self.env.observation_space.sample()) for _ in range(len(X_i))])
@@ -533,7 +532,9 @@ class PMDGeneralStateFiniteAction(FOPO):
                 Q_k_pred     = self.fa_Q.predict(X_i, i)
                 y_i = Q_acc_k_pred + eta_t*Q_k_pred
                 train_losses, test_losses = self.fa_Q_accum.update(X_i, y_i, i, validation_frac=0)
-                return train_losses, test_losses
+                loss += train_losses[-1]
+            self.last_po_loss = loss/self.n_actions
+            return train_losses, test_losses
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -560,9 +561,9 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         [self.normalize_obs(s) for s in s_visited]
-        y = adv_est if self.params["use_advantage"] else q_est
-        if self.params["normalize_sa_val"]:
-            y = (y-np.mean(y))/(np.std(y) + 1e-16)
+        y = adv_est if self.params.get("use_advantage",False) else q_est
+        if self.params.get("normalize_sa_val", None):
+            y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
         self.sto_Q_max_arr.append(np.max(y))
@@ -612,6 +613,8 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         self.msg += "train/\n"
         self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
+        if self.params["fa_type"] == "nn":
+            self.msg += f"  {'po_loss':<{l}}: {self.last_po_loss:.4e}\n"
         self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
         if self.params["fa_type"] == "linear":
             coef_change = la.norm(self.last_theta_accum - self.theta_accum)
