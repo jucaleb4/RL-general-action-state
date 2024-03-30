@@ -20,5 +20,9 @@
     "save_logs": true,
     "sgd_warmstart": true,
     "fa_type": "nn",
-    "max_grad_norm": 1
+    "max_grad_norm": 1,
+    "network_type": "deep",
+    "sgd_alpha": 0.1,
+    "pe_update": "sgd_mom",
+    "sgd_base_stepsize": 0.005
 }

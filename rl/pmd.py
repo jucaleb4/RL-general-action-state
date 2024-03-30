@@ -384,6 +384,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
         X = s_visited
         if self.params["fa_type"] == "linear":
+            print("Using linear function approximation with RKHS")
             self.fa_Q = LinearFunctionApproximator(self.n_actions, X, params)
             self.last_thetas = np.zeros((self.n_actions, self.fa_Q.dim), dtype=float)
             self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
@@ -392,6 +393,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.last_theta_accum = np.copy(self.theta_accum)
             self.last_intercept_accum = np.copy(self.intercept_accum)
         else:
+            print("Using neural network with tanh activation")
             self.fa_Q = NNFunctionApproximator(self.n_actions, 
                 input_dim=self.obs_dim, output_dim=1, params=params)
             self.fa_Q_accum = NNFunctionApproximator(self.n_actions, 

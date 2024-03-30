@@ -47,9 +47,8 @@ def main(alg, env_name, seed, settings, output={}):
     (act_is_finite, act_dim, _) = utils.get_space_property(env.action_space)
     is_enumerable = obs_is_finite and act_is_finite
 
-    import ipdb; ipdb.set_trace()
     assert alg not in ["pmd", "pda"] or params["fa_type"] != "none" or is_enumerable, \
-           "Must use function approximation is not enumerable"
+           "Must use function approximation if not enumerable"
 
     if params["fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
