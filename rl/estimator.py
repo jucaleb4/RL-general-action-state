@@ -255,7 +255,7 @@ class NNFunctionApproximator(FunctionApproximator):
 
         self.device = (
             "cuda" if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available()
+            # else "mps" if torch.backends.mps.is_available()
             else "cpu"
         )
 
@@ -268,10 +268,11 @@ class NNFunctionApproximator(FunctionApproximator):
             lr = params.get("sgd_base_stepsize", 0.001)
             weight_decay = params.get("sgd_alpha", 1e-3)
 
-            if pe_update == "sgd":
+            if pe_update in ["sgd", "sgd_mom"]:
                 dampening = momentum = 0 
                 if params.get("pe_update", "sgd") == "sgd_mom":
-                    dampening = momentum = 0.95
+                    dampening = 0.1
+                    momentum = 0.9
                 optimizer = torch.optim.SGD(
                     model.parameters(), 
                     momentum=momentum,

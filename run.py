@@ -47,13 +47,14 @@ def main(alg, env_name, seed, settings, output={}):
     (act_is_finite, act_dim, _) = utils.get_space_property(env.action_space)
     is_enumerable = obs_is_finite and act_is_finite
 
-    assert alg not in ["pmd", "pda"] or params["f_approx"] != "none" or is_enumerable, \
+    import ipdb; ipdb.set_trace()
+    assert alg not in ["pmd", "pda"] or params["fa_type"] != "none" or is_enumerable, \
            "Must use function approximation is not enumerable"
 
-    if params["f_approx"] == "none":
+    if params["fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
     if alg == "pmd":
-        assert params["f_approx"] != "none" and act_is_finite, \
+        assert params["fa_type"] != "none" and act_is_finite, \
         "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
     elif alg == "pda":
@@ -109,7 +110,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--max_iter', type=int, default=100, help="Max number of training iterations")
     parser.add_argument('--max_ep', type=int, default=-1, help="Max number of training episodes")
-    parser.add_argument('--f_approx', default="nn", choices=["none", "linear", "nn"], help="Type of function approximation")
+    parser.add_argument('--fa_type', default="none", choices=["none", "linear", "nn"], help="Type of function approximation")
 
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")

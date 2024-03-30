@@ -23,32 +23,32 @@ def get_wandb_tuning_sweep_id():
             'max': 0,
         },
         'sgd_n_iter': {
-            'values': [10,100],
+            'values': [10,10,10,100],
         },
         'stepsize': {
             'values': ['decreasing', 'constant']
         },
-        'sgd_base_stepsize': 
-            'distribution': 'uniform'
+        'sgd_base_stepsize': {
+            'distribution': 'uniform',
             'min': -5,
             'max': -1,
         },
-        'pe_update':
+        'pe_update': {
             'values': ['sgd', 'adam', 'sgd_mom'],
         },
-        'max_grad_norm': 
+        'max_grad_norm': {
             'values': [1,-1],
         },
-        'sgd_alpha':
+        'sgd_alpha': {
             'values': [0, 1e-3],
         },
-        'network_type':
+        'network_type': {
             'values': ['deep', 'shallow', 'small'],
         },
-        'normalize_obs':
+        'normalize_obs': {
             'values': [True, False]
-        }
-        'gamma':{
+        },
+        'gamma': {
             'distribution': 'uniform',
             'min': 0.9,
             'max': 1.0,
@@ -73,7 +73,7 @@ def wandb_tune_pmd_nn(config=None):
         params["base_stepsize"] = 10**params["base_stepsize"]
         params["sgd_base_stepsize"] = 10**params["sgd_base_stepsize"]
         params["sgd_warmstart"] = True
-        params["fa_type"] == "nn"
+        params["fa_type"] = "nn"
 
         n_trials = 10
         n_proc = mp.cpu_count()
