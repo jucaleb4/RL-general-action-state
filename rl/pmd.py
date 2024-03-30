@@ -70,9 +70,9 @@ class FOPO(RLAlg):
                 break
 
         self.save_episode_reward_and_len()
-        # return moving average reward
+        # return moving average reward (length 100)
         ep_cum_rwds = self.rollout.get_ep_rwds()
-        t = min(25, len(ep_cum_rwds))
+        t = min(100, len(ep_cum_rwds))
         return np.mean(ep_cum_rwds[-t:])
 
     def check_params(self):
@@ -528,16 +528,13 @@ class PMDGeneralStateFiniteAction(FOPO):
             test_loss = 0
             for i in range(self.n_actions):
                 X_i = self._last_s_visited_at_a[i]
-                # X_i_append = np.array([self.normalize_obs(self.env.observation_space.sample()) for _ in range(len(X_i))])
-                # X_i = np.vstack((X_i, X_i_append))
-                # append random samples as well
                 Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
                 y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
                 target_i = Q_acc_pred + eta_t*y_i
                 # print(la.norm(Q_acc_k_pred)**2/len(Q_acc_k_pred), eta_t*la.norm(Q_k_pred)**2/len(Q_k_pred))
-                train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i)
+                train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i, validation_frac=0)
                 train_loss += train_losses[-1]
-                test_loss += test_losses[-1]
+                test_loss += 0 if len(test_losses)==0 else test_losses[-1]
             self.last_po_loss = train_loss/self.n_actions
             self.last_po_test_loss = test_loss/self.n_actions
             return train_losses, test_losses

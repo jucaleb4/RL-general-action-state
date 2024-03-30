@@ -220,22 +220,29 @@ class LinearFunctionApproximator(FunctionApproximator):
 
 # Define model
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, params):
         super().__init__()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 100),
-            nn.Tanh(),
-            nn.Linear(100, 100),
-            nn.Tanh(),
-            nn.Linear(100, 100),
-            nn.Tanh(),
-            nn.Linear(100, output_dim)
-        )
+        n_hidden_layers = 2
+        layer_width = 128
+        if params.get("network_type", "small") == "deep":
+            n_hidden_layers = 8
+        elif params.get("network_type", "small") == "shallow":
+            layer_depth = 512
+
+        modules = nn.ModuleList([nn.Linear(input_dim, layer_width)])
+        modules.extend([nn.Tanh()])
+        for _ in range(1, n_hidden_layers):
+            modules.extend([nn.Linear(layer_width, layer_width)])
+            modules.extend([nn.Tanh()])
+        modules.extend([nn.Linear(layer_width, output_dim)])
+        
+        # https://discuss.pytorch.org/t/notimplementederror-module-modulelist-is-missing-the-required-forward-function/175049
+        self.linears = nn.Sequential(*modules)
 
     def forward(self, x):
         # if len(x.shape) > 1:
         #     x = torch.flatten(x)
-        logits = self.linear_relu_stack(x)
+        logits = self.linears(x)
         return logits
 
 class NNFunctionApproximator(FunctionApproximator):
@@ -253,26 +260,36 @@ class NNFunctionApproximator(FunctionApproximator):
         )
 
         self.models = []
-        self.loss_fns = []
         self.optimizers = []
+        self.loss_fn = nn.MSELoss()
         for _ in range(num_models):
-            model = NeuralNetwork(input_dim, output_dim).to(self.device)
+            model = NeuralNetwork(input_dim, output_dim, params).to(self.device)
+            pe_update = params.get("pe_update", "sgd")
+            lr = params.get("sgd_base_stepsize", 0.001)
+            weight_decay = params.get("sgd_alpha", 1e-3)
 
-            loss_fn = nn.MSELoss()
-            optimizer = torch.optim.SGD(
-                model.parameters(), 
-                lr=1e-3,
-                nesterov=True,
-                momentum=1e-5,
-                # momentum=5e-1
-            )
-            optimizer = torch.optim.Adam(model.parameters())
+            if pe_update == "sgd":
+                dampening = momentum = 0 
+                if params.get("pe_update", "sgd") == "sgd_mom":
+                    dampening = momentum = 0.95
+                optimizer = torch.optim.SGD(
+                    model.parameters(), 
+                    momentum=momentum,
+                    dampening=dampening,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                )
+            else:
+                optimizer = torch.optim.Adam(
+                    model.parameters(),
+                    lr=lr,
+                    weight_decay=weight_decay,
+                )
 
             self.models.append(model)
-            self.loss_fns.append(loss_fn)
             self.optimizers.append(optimizer)
 
-        self.max_grad_norm = max(1e-10, params.get("max_grad_norm", np.inf))
+        self.max_grad_norm = params.get("max_grad_norm", np.inf)
         self.sgd_n_iter = params.get("sgd_n_iter", 100)
 
     def predict(self, X, i=0):
@@ -350,7 +367,7 @@ class NNFunctionApproximator(FunctionApproximator):
                 pred_j = torch.squeeze(pred_j)
             if len(pred_j.shape) == 0:
                 continue
-            loss = self.loss_fns[i](pred_j, y_j)
+            loss = self.loss_fn(pred_j, y_j)
 
             # Zero your gradients for every batch!
             self.optimizers[i].zero_grad()
