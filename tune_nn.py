@@ -20,10 +20,10 @@ def get_wandb_tuning_sweep_id():
         'base_stepsize': {
             'distribution': 'uniform',
             'min': -3,
-            'max': 0,
+            'max': -1,
         },
         'sgd_n_iter': {
-            'values': [10,10,10,100],
+            'values': [10,30],
         },
         'stepsize': {
             'values': ['decreasing', 'constant']
@@ -31,7 +31,7 @@ def get_wandb_tuning_sweep_id():
         'sgd_base_stepsize': {
             'distribution': 'uniform',
             'min': -5,
-            'max': -1,
+            'max': -2,
         },
         'pe_update': {
             'values': ['sgd', 'adam', 'sgd_mom'],

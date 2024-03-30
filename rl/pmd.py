@@ -66,7 +66,7 @@ class FOPO(RLAlg):
             if t in checkpoint:
                 self.save_episode_reward_and_len()
 
-            if self.n_ep == self.max_ep or self.n_step == self.max_step:
+            if self.n_ep >= self.max_ep or self.n_step >= self.max_step:
                 break
 
         self.save_episode_reward_and_len()
