@@ -19,22 +19,19 @@ def get_wandb_tuning_sweep_id():
     parameters_dict = {
         'base_stepsize': {
             'distribution': 'uniform',
-            'min': -3,
-            'max': -1,
-        },
-        'sgd_n_iter': {
-            'values': [10,30],
+            'min': -2,
+            'max': -0.5,
         },
         'stepsize': {
             'values': ['decreasing', 'constant']
         },
         'sgd_base_stepsize': {
             'distribution': 'uniform',
-            'min': -5,
+            'min': -4,
             'max': -2,
         },
         'pe_update': {
-            'values': ['sgd', 'adam', 'sgd_mom'],
+            'values': ['sgd', 'adam'],
         },
         'max_grad_norm': {
             'values': [1,-1],
@@ -68,17 +65,19 @@ def wandb_tune_pmd_nn(config=None):
         params["verbose"] = False
         params["use_advantage"] = True
         params["max_iter"] = 100
-        params["max_step"] = 15000
+        params["sgd_n_iter"] = 10
+        params["max_step"] = 20000
         params["rollout_len"] = 1024
         params["base_stepsize"] = 10**params["base_stepsize"]
         params["sgd_base_stepsize"] = 10**params["sgd_base_stepsize"]
         params["sgd_warmstart"] = True
         params["fa_type"] = "nn"
 
-        n_trials = 10
+        n_trials = 3
         n_proc = mp.cpu_count()
         n_threads = min(n_proc, n_trials)
         final_rewards_arr = np.zeros(n_trials, dtype=float)
+        # returned_dict = {}
 
         manager = mp.Manager()
         returned_dict = manager.dict()
@@ -102,6 +101,10 @@ def wandb_tune_pmd_nn(config=None):
         if len(procs) > 0:
             for p in procs:
                 p.join()
+        """
+        for i in range(n_trials):
+            run_pmd_exp("pmd", "LunarLander-v2", i, params, returned_dict)
+        """
 
         final_rwds = []
         for i in range(n_trials):

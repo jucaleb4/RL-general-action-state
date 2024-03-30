@@ -11,4 +11,4 @@ from rl.pda import PDAGeneralStateAction
 from rl.qlearn import QLearn
 from rl.ppo import PPO
 
-from rl.gopt import gopt
+import rl.gopt as gopt
