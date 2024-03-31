@@ -82,6 +82,12 @@ class FOPO(RLAlg):
         if "max_ep_per_iter" not in self.params:
             warnings.warn("Did not pass in 'max_ep_per_iter' into params, defaulting to 1000")
             self.params["max_ep_per_iter"] = 1000
+        if "max_iter" not in self.params:
+            warnings.warn("Did not pass in 'max_iter' into params, defaulting to 100")
+            self.params["max_iter"] = 100
+        if "gamma" not in self.params:
+            warnings.warn("Did not pass in 'gamma' into params, defaulting to 1.")
+            self.params["gamma"] = 1
 
     def collect_rollouts(self):
         """ Collect samples for policy evaluation """

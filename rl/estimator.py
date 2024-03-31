@@ -139,7 +139,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         for _ in range(num_models):
             model = SGDRegressor(
                 learning_rate=params.get("sgd_stepsize", "constant"),
-                max_iter=params.get("sgd_n_iter", 1000),
+                max_iter=params.get("sgd_n_iter", 11),
                 alpha=params.get("sgd_alpha",1e-4),
                 warm_start=params.get("sgd_warmstart", False),
                 tol=0.0,
@@ -291,7 +291,7 @@ class NNFunctionApproximator(FunctionApproximator):
             self.optimizers.append(optimizer)
 
         self.max_grad_norm = params.get("max_grad_norm", np.inf)
-        self.sgd_n_iter = params.get("sgd_n_iter", 100)
+        self.sgd_n_iter = params.get("sgd_n_iter", 11)
 
     def predict(self, X, i=0):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
@@ -390,13 +390,13 @@ class NNFunctionApproximator(FunctionApproximator):
         """
         grad_X = []
         for j, X_j in enumerate(X):
-            X_i = torch.from_numpy(X_i).to(self.device).float()
-            X_i.requires_grad = True
+            X_j = torch.from_numpy(X_j).to(self.device).float()
+            X_j.requires_grad = True
             # TODO: Better way to remove this?
-            X_i.retain_grad()
-            y_i = self.models[i](X_j)
-            y_i.backward(torch.ones_like(y_j)) 
-            grad_X.append(X_i.grad.numpy())
+            X_j.retain_grad()
+            y_j = self.models[i](X_j)
+            y_j.backward(torch.ones_like(y_j)) 
+            grad_X.append(X_j.grad.numpy())
 
         grad_X = np.squeeze(np.array(grad_X))
         scale = 1

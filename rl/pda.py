@@ -22,8 +22,8 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 
-from gopt import ACFastGradDescent
-from gopt import BlackBox
+from rl.gopt import ACFastGradDescent
+from rl.gopt import BlackBox
 
 class PDAGeneralStateAction(FOPO):
     def __init__(self, env, params):
@@ -42,6 +42,9 @@ class PDAGeneralStateAction(FOPO):
         if isinstance(action_dim, tuple):
             assert len(action_dim) == 1, "Can only handle 1D action space"
             self.action_dim = action_dim[0]
+            
+        if(action_is_finite or obs_is_finite):
+            raise Exception("Both action and state space must be finite")
 
         self.obs_runstat = RunningStat(obs_dim)
         self.action_runstat = RunningStat(action_dim)
@@ -61,14 +64,12 @@ class PDAGeneralStateAction(FOPO):
         self.env_warmup()
         (_, _, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         sa_dim = self.obs_dim+self.action_dim
-        # This is for Q^k_{[k]}
-        self.fa_Q_acc_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=-1)
-        # This is for Q(\pi_k)
-        self.fa_Q_k = NNFunctionApproximator(sa_dim, 1, max_grad_norm=-1)
-        # initial action is all zeros
+        # This is for Q^k_{[k]} and Q(\pi_k)
+        self.fa_Q_accum = NNFunctionApproximator(1, input_dim=sa_dim, output_dim=1, params=params)
+        self.fa_Q = NNFunctionApproximator(1, input_dim=sa_dim, output_dim=1, params=params)
 
     def check_PDAGeneralStateAction_params(self):
-        return
+        self.params["mu_h"] = self.params.get("mu_h", 0)
 
     def get_stepsize_schedule(self):
         """ Returns (beta_t, lambda_t) """
@@ -80,20 +81,31 @@ class PDAGeneralStateAction(FOPO):
             lam = base_stepsize
             return (self.t+1, lam*(self.t+1)**(1.5))
         else:
-            if self.params["stepsize"] == "decreasing":
-                return (self.t+1, (self.t+1)*abs(self.mu_d))
-            n_iter = self.params["n_iter"]
-            return (self.t+1, n_iter*(n_iter+1)*abs(self.mu_d))
-        return (0,0)
+            # if self.params["stepsize"] == "decreasing":
+            #     return (self.t+1, (self.t+1)*abs(self.mu_d))
+            max_iter = self.params["max_iter"]
+            return (self.t+1, max_iter*(max_iter+1)*abs(self.mu_d))
 
     def policy_sample(self, s):
-        """ Sample via GD """
+        """ 
+        Sample via AC-FGM 
+
+        We sample according to
+        \[
+            \min_{a \in A} { \sum_{t=0}^k \beta_t Q(s,a;theta_t) + \lambda_k D(\pi_0(s),a) }
+        \]
+        by scaling down by $(\sum_{t=0}^k \beta_t)^{-1}$ and solving the equivalent problem
+        \[
+            \min_{a \in A} { Q^k(s,a;theta_{[k]}) + (\lambda_k/\sum_{t=0}^k \beta_t) D(\pi_0(s),a) }
+        \]
+        where $Q^k(s,a;theta_{[k]}) := (\sum_{t=0}^k \beta_t)^{-1} \sum_{t=0}^k \beta_t Q(s,a;\theta_t)$.
+        So we need to ensure the tolerance is also scaled by down by $(\sum_{t=0}^k \beta_t)^{-1}$.
+        """
         if not self.updated_at_least_once:
             return self.pi_0
 
         s_ = np.copy(s)
         warm_start = True
-        raised_mu_Q = False
         if self.just_updated_policy:
             self.sampling_grad = []
             self.mu_Q = 0.
@@ -102,8 +114,9 @@ class PDAGeneralStateAction(FOPO):
             # s_diff = la.norm(self._last_s - s)
             warm_start = False
 
+            """
             # guess the size of the gradient of NN wrt a
-            df = lambda a : -self.fa_Q_acc_k.grad(np.atleast_2d(np.append(s_, a)))[len(s):] 
+            df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)))[len(s_):] 
             m = 32
             df_norm_arr = np.zeros(m, dtype=float)
             for i in range(m):
@@ -111,6 +124,7 @@ class PDAGeneralStateAction(FOPO):
                 df_norm_arr[i] = la.norm(df(a))
             est_Q_grad_norm = np.mean(df_norm_arr) + 2*np.std(df_norm_arr) 
             self.scale = min(1, 1./est_Q_grad_norm)
+            """
 
             self.just_updated_policy = False
             self._first_eta = -1
@@ -121,29 +135,29 @@ class PDAGeneralStateAction(FOPO):
         while 1:
             (_, lam_t) = self.get_stepsize_schedule()
 
-            scale = -(lam_t/(self.beta_sum))**(-1) * self.scale
+            scale = lam_t/(self.beta_sum)
 
             # TODO: Add regularization
-            f = lambda a : scale * self.fa_Q_acc_k.predict(np.atleast_2d(np.append(s_, a)))  \
-                        + 0.5*la.norm(a-self.pi_0)**2
-            df = lambda a : scale * self.fa_Q_acc_k.grad(np.atleast_2d(np.append(s_, a)))[len(s):]  \
-                        + (a-self.pi_0)
+            f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)))  \
+                        + scale*0.5*la.norm(a-self.pi_0)**2
+            df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)))[len(s_):]  \
+                        + scale*(a-self.pi_0)
             oracle = BlackBox(f, df)
 
             # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
             stop_nonconvex = True
             opt = ACFastGradDescent(
                 oracle, 
-                a_0, 
+                np.copy(self.pi_0), # a_0, 
                 alpha=0.0, 
-                tol=1e-3, 
+                tol=1e-4/self.beta_sum, 
                 stop_nonconvex=stop_nonconvex,
                 first_eta=self._first_eta
             )
 
-            n_iter = 1_000 if warm_start else 50_000
+            max_iter = 1_000 if warm_start else 50_000
 
-            a_hat, _, grad_hist = opt.solve(n_iter=n_iter)
+            a_hat, _, grad_hist = opt.solve(n_iter=max_iter)
             self._first_eta = opt.first_eta
             self.sampling_grad.append(grad_hist[-1])
 
@@ -152,14 +166,8 @@ class PDAGeneralStateAction(FOPO):
             if stop_nonconvex and opt.detected_nonconvex:
                 old_mu_d = self.mu_d
                 self.mu_Q = 2*self.mu_Q if self.mu_Q > 0 else min(1, scale**2)
-                raised_mu_Q = True
                 self.mu_d = self.params["mu_h"] - self.mu_Q
-                # if abs(self.mu_d) >= 1e12:
-                #     raise RuntimeError("weak convexity too small, consider changing problem or solver")
             else:
-                if raised_mu_Q:
-                    pass
-                    # print(f"Detected nonconvexity, set mu_d={self.mu_d:.2e}")
                 break
 
         return a_hat
@@ -183,16 +191,15 @@ class PDAGeneralStateAction(FOPO):
             self._last_state_done,
         )
 
-
         X = np.hstack((s_visited, a_visited))
-        self._last_sa_visited = np.copy(X)
-
-        y = adv_est if self.params["use_advantage"] else q_est
-        y -= np.mean(y)
+        y = adv_est if self.params.get("use_advantage", False) else q_est
         if self.params.get("normalize_sa_val", False):
             y /= (np.std(y)+1e-8)
 
-        self.last_pe_loss = self.fa_Q_k.update(X, y)
+        self._last_sa_visited = np.copy(X)
+        self._last_y = np.copy(y)
+
+        self.last_pe_loss, _ = self.fa_Q.update(X, y, validation_frac=0)
 
     def policy_update(self): 
         self.updated_at_least_once = True
@@ -214,12 +221,12 @@ class PDAGeneralStateAction(FOPO):
         X = self._last_sa_visited
         y_arr = []
         # iterate over samples we used to estimate the last Q_{\pi_k}
-        Q_acc_k_pred = self.fa_Q_acc_k.predict(X)
-        Q_k_pred     = self.fa_Q_k.predict(X)
-        y = (self.beta_sum)**(-1)*(self.prev_beta_sum*Q_acc_k_pred + beta_t*Q_k_pred)
+        Q_acc_pred = self.fa_Q_accum.predict(X)
+        y_i        = self._last_y
+        y = (self.beta_sum)**(-1)*(self.prev_beta_sum*Q_acc_pred + beta_t*y_i)
 
         # approximately solve apolicy update
-        self.last_po_loss = self.fa_Q_acc_k.update(X,y)
+        self.last_po_loss, _ = self.fa_Q_accum.update(X,y, validation_frac=0)
 
     def policy_performance(self) -> float: 
         """ Uses policy estimation from `policy_evaluate()` and updates new policy (can
@@ -274,7 +281,7 @@ class PDAGeneralStateAction(FOPO):
             return 0
 
         pi_k_s = self.policy_sample(s)
-        v_s = self.fa_Q_k.predict(np.atleast_2d(np.append(s, pi_k_s)))
+        v_s = self.fa_Q.predict(np.atleast_2d(np.append(s, pi_k_s)))
 
         return v_s
 
