@@ -244,10 +244,9 @@ class PDAGeneralStateAction(FOPO):
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["rollout_len"]
-        # TODO: Magic number
-        self.rollout_len = 1000
+        self.params["rollout_len"] = max(2048, old_rollout_len)
         self.collect_rollouts()
-        self.rollout_len = old_rollout_len
+        self.params["rollout_len"] =  old_rollout_len
 
         # TODO: Can we delete these?
         # self.obs_runstat.update()

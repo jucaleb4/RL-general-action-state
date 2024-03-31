@@ -239,6 +239,13 @@ class NeuralNetwork(nn.Module):
         # https://discuss.pytorch.org/t/notimplementederror-module-modulelist-is-missing-the-required-forward-function/175049
         self.linears = nn.Sequential(*modules)
 
+        # zero initialization (rather than random, which can yield non-uniform behavior)
+        def init_weights(m):
+            if isinstance(m, nn.Linear):
+                torch.nn.init.zeros_(m.weight)
+                m.bias.data.fill_(0.01)
+        self.linears.apply(init_weights)
+
     def forward(self, x):
         # if len(x.shape) > 1:
         #     x = torch.flatten(x)
@@ -271,7 +278,7 @@ class NNFunctionApproximator(FunctionApproximator):
             if pe_update in ["sgd", "sgd_mom"]:
                 dampening = momentum = 0 
                 if params.get("pe_update", "sgd") == "sgd_mom":
-                    dampening = 0.1
+                    dampening = 0 # 0.1
                     momentum = 0.9
                 optimizer = torch.optim.SGD(
                     model.parameters(), 
@@ -285,6 +292,7 @@ class NNFunctionApproximator(FunctionApproximator):
                     model.parameters(),
                     lr=lr,
                     weight_decay=weight_decay,
+                    eps=1e-8,
                 )
 
             self.models.append(model)
@@ -292,6 +300,7 @@ class NNFunctionApproximator(FunctionApproximator):
 
         self.max_grad_norm = params.get("max_grad_norm", np.inf)
         self.sgd_n_iter = params.get("sgd_n_iter", 11)
+        self.batch_size = params.get("batch_size", 32)
 
     def predict(self, X, i=0):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
@@ -309,7 +318,7 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=32, sgd_n_iter=-1, validation_frac=0.1, skip_losses=False):
+    def update(self, X, y, i=0, batch_size=-1, sgd_n_iter=-1, validation_frac=0.1, skip_losses=False):
         try:
             X = np.array(X)
             y = np.array(y)
@@ -318,8 +327,7 @@ class NNFunctionApproximator(FunctionApproximator):
         if len(X) != len(y):
             raise RuntimeError("len(X) does not match len(y)")
         if batch_size < 1:
-            warnings.warn("Batch size not positive, setting to 1")
-            batch_size = 1
+            batch_size = self.batch_size
 
         # TODO: Make these customizable
         dataset = list(zip(X,y))
