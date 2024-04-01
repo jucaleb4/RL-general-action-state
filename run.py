@@ -37,7 +37,10 @@ def main(alg, env_name, seed, settings, output={}):
 
     fname = ""
     if settings.get("save_logs", False):
-        fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
+        sname_raw = settings.get("settings_file", "None")
+        if "json" in sname_raw:
+            sname_raw = os.path.splitext(os.path.basename(sname_raw))[0]
+        fname = os.path.join("logs", f"{alg}_{env_name}_settings={sname_raw}_seed={seed}.csv")
 
     params = settings.copy()
     params["verbose"] = False
