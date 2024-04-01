@@ -72,12 +72,12 @@ def test_learning_value_linear_function():
     plt.tight_layout()
     plt.show()
 
-def test_learning_value_nn_function():
+def test_learning_value_nn_function(pe_update="sgd"):
     # create enviroment
     env = gym.make("LunarLander-v2", max_episode_steps=1000)
     n_actions = utils.get_space_cardinality(env.action_space)
     sgd_n_iter = 500
-    params = {"sgd_n_iter": sgd_n_iter, "fa_type": "nn", "pe_update": "adam"}
+    params = {"sgd_n_iter": sgd_n_iter, "fa_type": "nn", "pe_update": pe_update}
 
     alg = PMDGeneralStateFiniteAction(env, params)
 
@@ -123,5 +123,7 @@ def test_learning_value_nn_function():
     plt.tight_layout()
     plt.show()
 
- #test_learning_value_linear_function()
-test_learning_value_nn_function()
+if input("run linear?").lower() in ["y", "yes"]:
+    test_learning_value_linear_function()
+else:
+    test_learning_value_nn_function()

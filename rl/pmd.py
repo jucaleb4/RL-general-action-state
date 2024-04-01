@@ -534,8 +534,12 @@ class PMDGeneralStateFiniteAction(FOPO):
         else:
             train_loss = 0
             test_loss = 0
+            not_visited_actions = []
             for i in range(self.n_actions):
                 X_i = self._last_s_visited_at_a[i]
+                if X_i is None or len(X_i) == 0:
+                    not_visited_actions.append(i)
+                    continue
                 Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
                 y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
                 target_i = Q_acc_pred + eta_t*y_i
@@ -543,6 +547,8 @@ class PMDGeneralStateFiniteAction(FOPO):
                 train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i, validation_frac=0)
                 train_loss += train_losses[-1]
                 test_loss += 0 if len(test_losses)==0 else test_losses[-1]
+            if len(not_visited_actions) > 0:
+                print(f"Did not visit actions {not_visited_actions}")
             self.last_po_loss = train_loss/self.n_actions
             self.last_po_test_loss = test_loss/self.n_actions
             return train_losses, test_losses
@@ -574,8 +580,8 @@ class PMDGeneralStateFiniteAction(FOPO):
         [self.normalize_obs(s) for s in s_visited]
         y = adv_est if self.params.get("use_advantage",False) else q_est
         [self.normalize_rwd(y_i) for y_i in y]
-        if self.params.get("normalize_sa_val", None):
-            y = (y-np.mean(y))/(np.std(y) + 1e-8)
+        # if self.params.get("normalize_sa_val", None):
+        #     y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
         self.sto_Q_max_arr.append(np.max(y))
