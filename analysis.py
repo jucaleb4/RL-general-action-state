@@ -5,6 +5,12 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 
+"""
+Reads in logs/policy_progress.csv (assumed that PMD creates this) and parses
+the changes in Q's, log(pi), and pi. We then find the 50 iteration-state pairs
+that produced the biggest change in policy (wrt KL divergence)
+"""
+
 def kl(x,y):
     return np.sum(np.multiply(y, np.log(np.divide(y, x.astype("float")))))
 
@@ -41,7 +47,7 @@ print("="*30)
 # find points where kl divergence changed the most find top 50
 sorted_idxs = np.argsort(kl_divs)[-50:][::-1]
 for rk, i in enumerate(sorted_idxs):
-    print(f"rk {rk+1} State: {s[i]}")
+    print(f"rk {rk+1} (iter {int(i/num_s)}) State: {s[i]}")
     print(f"q_sa   : {q_s[i]} -> {q_s[i+num_s]}")
     print(f"logpi_s: {logpi_s[i]} -> {logpi_s[i+num_s]}")
     print(f"pi_s   : {pi_s[i]} -> {pi_s[i+num_s]}")
