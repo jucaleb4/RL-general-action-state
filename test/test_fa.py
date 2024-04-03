@@ -14,7 +14,10 @@ from rl import utils
 
 def test_learning_value_linear_function():
     # create enviroment
-    env = gym.make("LunarLander-v2", max_episode_steps=1000)
+    # env = gym.make("LunarLander-v2", max_episode_steps=1000)
+    env = gym.make("gym_examples/GridWorld-v0", max_episode_steps=1000)
+    env = gym.wrappers.FlattenObservation(env)
+    import ipdb; ipdb.set_trace()
     n_actions = utils.get_space_cardinality(env.action_space)
     sgd_n_iter = 1000
     params = {"sgd_n_iter": sgd_n_iter}
@@ -34,6 +37,7 @@ def test_learning_value_linear_function():
     num_iters = np.zeros(n_actions, dtype=int)
     sklearn_iters = np.zeros(n_actions, dtype=int)
     sklearn_losses = np.zeros((n_actions, 2), dtype=float)
+
     for i in range(n_actions):
         action_i_idx = np.where(a_visited==i)[0]
         if len(action_i_idx) == 0:
@@ -43,6 +47,7 @@ def test_learning_value_linear_function():
         y_i = y[action_i_idx]
         sklearn_losses[i,0] = la.norm(alg.fa_Q.predict(X_i, i)-y_i)**2/len(y_i)
 
+    for i in range(n_actions):
         s_time = time.time()
         train_loss, val_loss = alg.fa_Q.update(X_i, y_i, i, use_custom_sgd=True)
         custom_time += time.time() - s_time

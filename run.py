@@ -29,9 +29,14 @@ def main(alg, env_name, seed, settings, output={}):
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
+
     if "GridWorld" in env_name:
+        env = gym.make(
+            env_name,
+            size=4,
+            max_episode_steps=100, # can change length here!
+        )
         env = gym.wrappers.FlattenObservation(env)
-        env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env.reset()
 
@@ -53,9 +58,9 @@ def main(alg, env_name, seed, settings, output={}):
     assert alg not in ["pmd", "pda"] or params["fa_type"] != "none" or is_enumerable, \
            "Must use function approximation if not enumerable"
 
-    if params["fa_type"] == "none":
+    if alg == "pmd" and params["fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
-    if alg == "pmd":
+    elif alg == "pmd":
         assert params["fa_type"] != "none" and act_is_finite, \
         "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
@@ -120,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode. Rollout_len overwritten by max_ep_per_iter")
     parser.add_argument('--max_ep_per_iter', default=-1, type=int, help="Max episodes per training epoch. If negative, then no max episode (uses rollout_len instead)")
 
-    parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
+    parser.add_argument('--stepsize', default="constant", choices=["decreasing", "constant"], help="Policy optimization stepsize")
     parser.add_argument('--base_stepsize', default=-1, type=float, help="base stepsize")
     parser.add_argument('--mu_h', default=0, type=float, help="entropy regularizations trength")
     parser.add_argument('--normalize_obs', action="store_true", help="Normalize observations via warm-start")
