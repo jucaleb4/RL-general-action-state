@@ -16,7 +16,7 @@ class PPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
 
-    def _learn(self, n_iter):
+    def _learn(self, max_iter):
         self.env = Monitor(env=self.env)
     
         max_ep = self.params["max_ep"] if self.params["max_ep"] > 0 else np.inf
@@ -29,7 +29,7 @@ class PPO(RLAlg):
             self.env, 
             verbose=1, 
         )
-        model.learn(int(1e10), callback=callback_max_episodes)
+        model.learn(max_iter, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()

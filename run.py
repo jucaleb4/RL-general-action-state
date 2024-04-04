@@ -29,15 +29,23 @@ def main(alg, env_name, seed, settings, output={}):
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
     )
+
     if "GridWorld" in env_name:
+        env = gym.make(
+            env_name,
+            size=4,
+            max_episode_steps=100, # can change length here!
+        )
         env = gym.wrappers.FlattenObservation(env)
-        env = gym.wrappers.TransformReward(env, lambda r : 1-r)
 
     env.reset()
 
     fname = ""
     if settings.get("save_logs", False):
-        fname = os.path.join("logs", f"{alg}_{env_name}_seed={seed}.csv")
+        sname_raw = settings.get("settings_file", "None")
+        if "json" in sname_raw:
+            sname_raw = os.path.splitext(os.path.basename(sname_raw))[0]
+        fname = os.path.join("logs", f"{alg}_{env_name}_settings={sname_raw}_seed={seed}.csv")
 
     params = settings.copy()
     params["verbose"] = False
@@ -47,13 +55,13 @@ def main(alg, env_name, seed, settings, output={}):
     (act_is_finite, act_dim, _) = utils.get_space_property(env.action_space)
     is_enumerable = obs_is_finite and act_is_finite
 
-    assert alg not in ["pmd", "pda"] or params["f_approx"] != "none" or is_enumerable, \
-           "Must use function approximation is not enumerable"
+    assert alg not in ["pmd", "pda"] or params["fa_type"] != "none" or is_enumerable, \
+           "Must use function approximation if not enumerable"
 
-    if params["f_approx"] == "none":
+    if alg == "pmd" and params["fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
-    if alg == "pmd":
-        assert params["f_approx"] != "none" and act_is_finite, \
+    elif alg == "pmd":
+        assert params["fa_type"] != "none" and act_is_finite, \
         "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
     elif alg == "pda":
@@ -109,7 +117,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--max_iter', type=int, default=100, help="Max number of training iterations")
     parser.add_argument('--max_ep', type=int, default=-1, help="Max number of training episodes")
-    parser.add_argument('--f_approx', default="nn", choices=["none", "linear", "nn"], help="Type of function approximation")
+    parser.add_argument('--fa_type', default="none", choices=["none", "linear", "nn"], help="Type of function approximation")
 
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor")
     parser.add_argument('--gae_lambda', default=1., type=float, help="Additional discount factor")
@@ -117,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_len', default=1000, type=int, help="Trajectory length for one iteration/episode. Rollout_len overwritten by max_ep_per_iter")
     parser.add_argument('--max_ep_per_iter', default=-1, type=int, help="Max episodes per training epoch. If negative, then no max episode (uses rollout_len instead)")
 
-    parser.add_argument('--stepsize', default="decreasing", choices=["decreasing", "constant"], help="Policy optimization stepsize")
+    parser.add_argument('--stepsize', default="constant", choices=["decreasing", "constant"], help="Policy optimization stepsize")
     parser.add_argument('--base_stepsize', default=-1, type=float, help="base stepsize")
     parser.add_argument('--mu_h', default=0, type=float, help="entropy regularizations trength")
     parser.add_argument('--normalize_obs', action="store_true", help="Normalize observations via warm-start")

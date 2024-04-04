@@ -44,7 +44,7 @@ def get_space_cardinality(space):
     if isinstance(space, gym.spaces.discrete.Discrete):
         return space.n
     elif isinstance(space, gym.spaces.box.Box):
-        assert space.dtype == int, "Unsupported box type {space.dtype} (must be int/in64)"
+        assert space.dtype == int, f"Unsupported box type {space.dtype} (must be int/in64)"
         assert np.all(space.high-space.low >= 0)
         return np.prod(space.high-space.low+1)
     else:

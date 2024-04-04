@@ -139,7 +139,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         for _ in range(num_models):
             model = SGDRegressor(
                 learning_rate=params.get("sgd_stepsize", "constant"),
-                max_iter=params.get("sgd_n_iter", 1000),
+                max_iter=params.get("sgd_n_iter", 11),
                 alpha=params.get("sgd_alpha",1e-4),
                 warm_start=params.get("sgd_warmstart", False),
                 tol=0.0,
@@ -220,32 +220,36 @@ class LinearFunctionApproximator(FunctionApproximator):
 
 # Define model
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, params):
         super().__init__()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.Tanh(),
-            nn.Linear(64, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 64),
-            nn.Tanh(),
-            nn.Linear(64, output_dim)
-        )
+        n_hidden_layers = 2
+        layer_width = 128
+        if params.get("network_type", "small") == "deep":
+            n_hidden_layers = 8
+        elif params.get("network_type", "small") == "shallow":
+            layer_depth = 512
+
+        modules = nn.ModuleList([nn.Linear(input_dim, layer_width)])
+        modules.extend([nn.Tanh()])
+        for _ in range(1, n_hidden_layers):
+            modules.extend([nn.Linear(layer_width, layer_width)])
+            modules.extend([nn.Tanh()])
+        modules.extend([nn.Linear(layer_width, output_dim)])
+        
+        # https://discuss.pytorch.org/t/notimplementederror-module-modulelist-is-missing-the-required-forward-function/175049
+        self.linears = nn.Sequential(*modules)
+
+        # zero initialization (rather than random, which can yield non-uniform behavior)
+        def init_weights(m):
+            if isinstance(m, nn.Linear):
+                torch.nn.init.zeros_(m.weight)
+                m.bias.data.fill_(0.01)
+        self.linears.apply(init_weights)
 
     def forward(self, x):
         # if len(x.shape) > 1:
         #     x = torch.flatten(x)
-        logits = self.linear_relu_stack(x)
+        logits = self.linears(x)
         return logits
 
 class NNFunctionApproximator(FunctionApproximator):
@@ -258,32 +262,45 @@ class NNFunctionApproximator(FunctionApproximator):
 
         self.device = (
             "cuda" if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available()
+            # else "mps" if torch.backends.mps.is_available()
             else "cpu"
         )
 
         self.models = []
-        self.loss_fns = []
         self.optimizers = []
+        self.loss_fn = nn.MSELoss()
         for _ in range(num_models):
-            model = NeuralNetwork(input_dim, output_dim).to(self.device)
+            model = NeuralNetwork(input_dim, output_dim, params).to(self.device)
+            pe_update = params.get("pe_update", "sgd")
+            lr = params.get("sgd_base_stepsize", 0.001)
+            weight_decay = params.get("sgd_alpha", 1e-3)
 
-            loss_fn = nn.MSELoss()
-            optimizer = torch.optim.SGD(
-                model.parameters(), 
-                lr=1e-3,
-                nesterov=True,
-                momentum=1e-5,
-                # momentum=5e-1
-            )
-            optimizer = torch.optim.Adam(model.parameters())
+            if pe_update in ["sgd", "sgd_mom"]:
+                dampening = momentum = 0 
+                if params.get("pe_update", "sgd") == "sgd_mom":
+                    dampening = 0 # 0.1
+                    momentum = 0.9
+                optimizer = torch.optim.SGD(
+                    model.parameters(), 
+                    momentum=momentum,
+                    dampening=dampening,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                )
+            else:
+                optimizer = torch.optim.Adam(
+                    model.parameters(),
+                    lr=lr,
+                    weight_decay=weight_decay,
+                    eps=1e-8,
+                )
 
             self.models.append(model)
-            self.loss_fns.append(loss_fn)
             self.optimizers.append(optimizer)
 
-        self.max_grad_norm = max(1e-10, params.get("max_grad_norm", np.inf))
-        self.sgd_n_iter = params.get("sgd_n_iter", 100)
+        self.max_grad_norm = params.get("max_grad_norm", np.inf)
+        self.sgd_n_iter = params.get("sgd_n_iter", 11)
+        self.batch_size = params.get("batch_size", 32)
 
     def predict(self, X, i=0):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
@@ -301,7 +318,7 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=32, validation_frac=0.1, skip_losses=False):
+    def update(self, X, y, i=0, batch_size=-1, sgd_n_iter=-1, validation_frac=0.1, skip_losses=False):
         try:
             X = np.array(X)
             y = np.array(y)
@@ -310,8 +327,7 @@ class NNFunctionApproximator(FunctionApproximator):
         if len(X) != len(y):
             raise RuntimeError("len(X) does not match len(y)")
         if batch_size < 1:
-            warnings.warn("Batch size not positive, setting to 1")
-            batch_size = 1
+            batch_size = self.batch_size
 
         # TODO: Make these customizable
         dataset = list(zip(X,y))
@@ -320,7 +336,8 @@ class NNFunctionApproximator(FunctionApproximator):
         train_losses = []
         test_losses = []
         batch_size = min(len(X), batch_size)
-        for _ in range(self.sgd_n_iter):
+        sgd_n_iter = sgd_n_iter if sgd_n_iter > 0 else self.sgd_n_iter
+        for _ in range(sgd_n_iter):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
             X_train, y_train = list(zip(*dataset[:val_idx]))
@@ -359,7 +376,7 @@ class NNFunctionApproximator(FunctionApproximator):
                 pred_j = torch.squeeze(pred_j)
             if len(pred_j.shape) == 0:
                 continue
-            loss = self.loss_fns[i](pred_j, y_j)
+            loss = self.loss_fn(pred_j, y_j)
 
             # Zero your gradients for every batch!
             self.optimizers[i].zero_grad()
@@ -381,13 +398,13 @@ class NNFunctionApproximator(FunctionApproximator):
         """
         grad_X = []
         for j, X_j in enumerate(X):
-            X_i = torch.from_numpy(X_i).to(self.device).float()
-            X_i.requires_grad = True
+            X_j = torch.from_numpy(X_j).to(self.device).float()
+            X_j.requires_grad = True
             # TODO: Better way to remove this?
-            X_i.retain_grad()
-            y_i = self.models[i](X_j)
-            y_i.backward(torch.ones_like(y_j)) 
-            grad_X.append(X_i.grad.numpy())
+            X_j.retain_grad()
+            y_j = self.models[i](X_j)
+            y_j.backward(torch.ones_like(y_j)) 
+            grad_X.append(X_j.grad.numpy())
 
         grad_X = np.squeeze(np.array(grad_X))
         scale = 1

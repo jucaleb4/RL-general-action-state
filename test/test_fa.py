@@ -14,7 +14,10 @@ from rl import utils
 
 def test_learning_value_linear_function():
     # create enviroment
-    env = gym.make("LunarLander-v2", max_episode_steps=1000)
+    # env = gym.make("LunarLander-v2", max_episode_steps=1000)
+    env = gym.make("gym_examples/GridWorld-v0", max_episode_steps=1000)
+    env = gym.wrappers.FlattenObservation(env)
+    import ipdb; ipdb.set_trace()
     n_actions = utils.get_space_cardinality(env.action_space)
     sgd_n_iter = 1000
     params = {"sgd_n_iter": sgd_n_iter}
@@ -34,6 +37,7 @@ def test_learning_value_linear_function():
     num_iters = np.zeros(n_actions, dtype=int)
     sklearn_iters = np.zeros(n_actions, dtype=int)
     sklearn_losses = np.zeros((n_actions, 2), dtype=float)
+
     for i in range(n_actions):
         action_i_idx = np.where(a_visited==i)[0]
         if len(action_i_idx) == 0:
@@ -41,18 +45,19 @@ def test_learning_value_linear_function():
 
         X_i = X[action_i_idx]
         y_i = y[action_i_idx]
-        sklearn_losses[i,0] = la.norm(alg.fa.predict(X_i, i)-y_i)**2/len(y_i)
+        sklearn_losses[i,0] = la.norm(alg.fa_Q.predict(X_i, i)-y_i)**2/len(y_i)
 
+    for i in range(n_actions):
         s_time = time.time()
-        train_loss, val_loss = alg.fa.update(X_i, y_i, i, use_custom_sgd=True)
+        train_loss, val_loss = alg.fa_Q.update(X_i, y_i, i, use_custom_sgd=True)
         custom_time += time.time() - s_time
         train_losses[i,:len(train_loss)] = train_loss
         val_losses[i,:len(val_loss)] = val_loss
         num_iters[i] = len(train_loss)
 
         s_time = time.time()
-        sklearn_losses[i,1], _ = alg.fa.update(X_i, y_i, i, use_custom_sgd=False)
-        sklearn_iters[i] = alg.fa.models[i].n_iter_
+        sklearn_losses[i,1], _ = alg.fa_Q.update(X_i, y_i, i, use_custom_sgd=False)
+        sklearn_iters[i] = alg.fa_Q.models[i].n_iter_
         sklearn_time += time.time() - s_time
 
     print(f"Custom total time: {custom_time:.2f}s. sklearn total time: {sklearn_time:.2f}s")
@@ -72,12 +77,12 @@ def test_learning_value_linear_function():
     plt.tight_layout()
     plt.show()
 
-def test_learning_value_nn_function():
+def test_learning_value_nn_function(pe_update="sgd"):
     # create enviroment
     env = gym.make("LunarLander-v2", max_episode_steps=1000)
     n_actions = utils.get_space_cardinality(env.action_space)
-    sgd_n_iter = 100
-    params = {"sgd_n_iter": sgd_n_iter, "fa_type": "nn"}
+    sgd_n_iter = 500
+    params = {"sgd_n_iter": sgd_n_iter, "fa_type": "nn", "pe_update": pe_update}
 
     alg = PMDGeneralStateFiniteAction(env, params)
 
@@ -123,4 +128,7 @@ def test_learning_value_nn_function():
     plt.tight_layout()
     plt.show()
 
-test_learning_value_nn_function()
+if input("run linear?").lower() in ["y", "yes"]:
+    test_learning_value_linear_function()
+else:
+    test_learning_value_nn_function()
