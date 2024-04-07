@@ -120,14 +120,14 @@ class LinearFunctionApproximator(FunctionApproximator):
             self.featurizer = PolynomialFeatures(self._deg)
         elif self.feature_type == "rbf":
             self.featurizer = sklearn.pipeline.FeatureUnion([
-                ("rbf1", RBFSampler(gamma=20, n_components=100)),
-                ("rbf2", RBFSampler(gamma=10, n_components=100)),
+                # ("rbf1", RBFSampler(gamma=20, n_components=100)),
+                # ("rbf2", RBFSampler(gamma=10, n_components=100)),
                 ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
-                ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
+                # ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
                 ("rbf5", RBFSampler(gamma=1.0, n_components=100)),
-                ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
-                ("rbf7", RBFSampler(gamma=0.1, n_components=100)),
-                ("rbf8", RBFSampler(gamma=0.05, n_components=100)),
+                # ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
+                # ("rbf7", RBFSampler(gamma=0.1, n_components=100)),
+                # ("rbf8", RBFSampler(gamma=0.05, n_components=100)),
             ])
         else:
             print(f"Unknown feature type {self.feature_type}")
