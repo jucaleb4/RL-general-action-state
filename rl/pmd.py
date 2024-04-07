@@ -39,6 +39,7 @@ class FOPO(RLAlg):
         self.last_iter_ep = 0
         self.max_ep = params["max_ep"] if params.get("max_ep",0) > 0 else np.inf
         self.max_step = params["max_step"] if params.get("max_step",0) > 0 else np.inf
+        self.emp_Q_max_arr = []
         self.sto_Q_max_arr = []
 
     def _learn(self, max_iter):
@@ -163,30 +164,31 @@ class FOPO(RLAlg):
                 return base_stepsize/np.sqrt(self.params["max_iter"])
             elif self.params["stepsize"]  == "adapt_constant":
                 # TODO: Incorporate regularization
-                tQ_norm_sq = self.stoch_Q_second_moment()
+                Q_inf = abs(self.emp_Q_max_arr[-1])
+                tQ_inf_sq = self.stoch_Q_second_moment()
                 M_h = self.params.get("M_h",0)
-                lam = np.sqrt(2*np.log(self.n_actions)/(2*tQ_norm_sq))
+                lam = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
                 return lam/np.sqrt(self.params["max_iter"])
             elif self.params["stepsize"] == "decreasing":
                 return base_stepsize * float(self.t+1)**(-0.5)
             elif self.params["stepsize"] == "adapt_decreasing":
-                tQ_norm_sq = self.stoch_Q_second_moment()
+                Q_inf = abs(self.emp_Q_max_arr[-1])
+                tQ_inf_sq = self.stoch_Q_second_moment()
                 M_h = self.params.get("M_h",0)
-                lam = np.sqrt(2*np.log(self.n_actions)/(2*tQ_norm_sq))
+                lam = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
                 return lam/np.sqrt(self.t+1)
+            else:
+                raise Exception("Unknown stepsize rule {self.params['stepsize']}")
         else:
             base_stepsize = mu_h/(self.t+1)
             stepsize = (mu_h + 1./base_stepsize)**(-1)
             stepsize *= (mu_h+1)**(self.t+1)
             return stepsize
 
-    def stoch_Q_second_moment(self, mv_avg_len=30):
+    def stoch_Q_second_moment(self, mv_avg_len=5):
         l = min(mv_avg_len, len(self.sto_Q_max_arr))
-        if l == 0:
-            raise Exception("You must warm start `self.sto_Q_max_arr` before using adaptive")
-        if l == 1:
-            return self.sto_Q_max_arr[0]**2
-        return np.var(self.sto_Q_max_arr[-l:])
+        if l == 0: return 0
+        return np.mean(np.square(self.sto_Q_max_arr[-l:]))
 
     def env_warmup(self):
         return
@@ -509,11 +511,12 @@ class PMDGeneralStateFiniteAction(FOPO):
             y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
-        self.sto_Q_max_arr.append(np.max(y))
+        self.emp_Q_max_arr.append(np.max(y))
 
         # extract fitted parameters
         not_visited_actions = []
         loss = 0.
+        sto_Q_arr = [0]
         for i in range(self.n_actions):
             action_i_idx = np.where(a_visited==i)[0]
             if len(action_i_idx) == 0:
@@ -523,6 +526,8 @@ class PMDGeneralStateFiniteAction(FOPO):
             self._last_y_a[i] = np.copy(y[action_i_idx])
             if self.params["fa_type"] == "linear":
                 train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i)
+                pred = self.fa_Q.predict(X[action_i_idx], i)
+                sto_Q_arr.append(np.mean(np.square(pred)))
             else:
                 train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i, validation_frac=0)
             if isinstance(train_loss, float) or isinstance(train_loss, int):
@@ -535,6 +540,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
 
+        self.sto_Q_max_arr.append(np.max(sto_Q_arr))
         self.last_pe_loss = loss/self.n_actions
 
     def ctd_Q(self):
@@ -617,6 +623,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         #     y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
+        self.emp_Q_max_arr.append(np.max(y))
         self.sto_Q_max_arr.append(np.max(y))
 
         self.obs_runstat.update()
