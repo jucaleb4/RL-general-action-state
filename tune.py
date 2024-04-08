@@ -17,19 +17,6 @@ def get_wandb_tuning_sweep_id():
     sweep_config['metric'] = metric
 
     parameters_dict = {
-        'mu_h': { 
-            'distribution': 'uniform',
-            'min': -4,
-            'max': 0,
-        },
-        "use_reg": {
-            'values': [True, False],
-        },
-        'gamma': {  # a flat distribution between 0 and 0.1
-            'distribution': 'uniform',
-            'min': 0.9,
-            'max': 0.99,
-        },
         'base_stepsize': {
             'distribution': 'uniform',
             'min': -2,
@@ -41,9 +28,6 @@ def get_wandb_tuning_sweep_id():
             'min': 1024,
             'max': 4096,
         },
-        'max_ep_per_iter': { 
-            'values': [2,4,8],
-        },
         'sgd_alpha': {
             'distribution': 'uniform',
             'min': -4,
@@ -52,13 +36,13 @@ def get_wandb_tuning_sweep_id():
         'sgd_n_iter': {
             'distribution': 'q_log_uniform_values',
             'q': 10,
-            'min': 5000,
-            'max': 50000,
+            'min': 50,
+            'max': 5000,
         },
     }
     sweep_config['parameters'] = parameters_dict
 
-    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v2")
+    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v3")
 
     return sweep_id
 
@@ -70,17 +54,21 @@ def wandb_tune_pmd_linear(config=None):
         params["verbose"] = False
         params["stepsize"] = "decreasing"
         params["sgd_stepsize"] = "constant"
+        params["gamma"] = 0.995
         params["use_advantage"] = True
         params["normalize_obs"] = False
         params["normalize_rwd"] = False
         params["dynamic_stepsize"] = False
         params["n_iter"] = 100
         params["n_ep"] = 100
-        params["mu_h"] = 10**params["mu_h"] if params["use_reg"] else 0.
+        params["mu_h"] = 0
         params["base_stepsize"] = 10**params["base_stepsize"]
         params["sgd_alpha"] = 10**params["sgd_alpha"]
         params["normalize_sa_val"] = True
         params["max_grad_norm"] = -1
+        params["max_ep_per_iter"] = -1
+        params["max_iter"] = 20
+        params["fa_type"] = "linear"
 
         n_trials = 10
         n_proc = mp.cpu_count()
