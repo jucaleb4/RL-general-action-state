@@ -56,7 +56,7 @@ def wandb_tune_pmd_linear(config=None):
         params["normalize_sa_val"] = params['stepsize'] == 'adaptive'
         params["max_grad_norm"] = -1
         params["max_ep_per_iter"] = -1
-        params["max_iter"] = 2
+        params["max_iter"] = 20
         params["fa_type"] = "linear"
         params["rollout_len"] = 4096
         params["sgd_n_iter"] = 2048
