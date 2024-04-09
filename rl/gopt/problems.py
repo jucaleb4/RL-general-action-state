@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.linalg as la
 
-from gopt import FOO
+from rl.gopt import FOO
 
 class LeastSquares(FOO):
     def __init__(self, m, n, A=None):

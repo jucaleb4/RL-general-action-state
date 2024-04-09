@@ -244,13 +244,15 @@ class NeuralNetwork(nn.Module):
         # zero initialization (rather than random, which can yield non-uniform behavior)
         def init_weights(m):
             if isinstance(m, nn.Linear):
-                g_cpu = torch.Generator()
-                g_cpu.manual_seed(seed)
-                torch.nn.init.xavier_normal_(m.weight, generator=g_cpu)
-                stdv = 1. / np.sqrt(m.weight.size(1))
-                torch.nn.init.normal_(m.bias, std=stdv, generator=g_cpu)
+                # g_cpu = torch.Generator()
+                # g_cpu.manual_seed(seed)
+                # torch.nn.init.xavier_normal_(m.weight, generator=g_cpu)
+                # torch.nn.init.xavier_normal_(m.weight)
+                # stdv = 1. / np.sqrt(m.weight.size(1))
+                # torch.nn.init.normal_(m.bias, std=stdv, generator=g_cpu)
                 # torch.nn.init.xavier_uniform_(m.weight, generator=g_cpu)
-                # torch.nn.init.zeros_(m.weight)
+                torch.nn.init.zeros_(m.weight)
+                torch.nn.init.zeros_(m.bias)
         self.linears.apply(init_weights)
 
     def forward(self, x):

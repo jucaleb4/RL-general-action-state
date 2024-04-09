@@ -1,6 +1,6 @@
-from gopt.oracle import FOO
-from gopt.problems import *
+from rl.gopt.oracle import FOO
+from rl.gopt.problems import *
 
-from gopt.optimizers import GradDescent
-from gopt.optimizers import AccGradDescent
-from gopt.optimizers import ACFastGradDescent
+from rl.gopt.optimizers import GradDescent
+from rl.gopt.optimizers import AccGradDescent
+from rl.gopt.optimizers import ACFastGradDescent

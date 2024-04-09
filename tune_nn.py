@@ -1,3 +1,5 @@
+import os, sys
+
 import multiprocessing as mp
 
 import numpy as np
@@ -33,13 +35,13 @@ def get_wandb_tuning_sweep_id():
             'min': -5,
             'max': -1,
         },
-        'normalize_obs': {
-            'values': [True, False]
-        },
+        'stepsize': {
+            'values': ['adaptive', 'pre-norm', 'standard']
+        }
     }
     sweep_config['parameters'] = parameters_dict
 
-    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-nnfunction-v3")
+    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-nnfunction-v4")
 
     return sweep_id
 
@@ -52,21 +54,19 @@ def wandb_tune_pmd_linear(config=None):
         params["stepsize"] = "decreasing"
         params["sgd_stepsize"] = "constant"
         params["gamma"] = 0.995
-        params["use_advantage"] = True
-        params["normalize_rwd"] = False
+        params["use_advantage"] = params['stepsize'] == 'pre-norm'
+        params["normalize_rwd"] = params['stepsize'] == 'pre-norm'
         params["dynamic_stepsize"] = False
-        params["n_iter"] = 100
-        params["n_ep"] = 100
         params["mu_h"] = 0
-        params["base_stepsize"] = 10**params["base_stepsize"]
+        params["base_stepsize"] = 10**params["base_stepsize"] * (0.1 if params['stepsize'] == 'standard' else 1.)
         params["sgd_alpha"] = 10**params["sgd_alpha"]
-        params["normalize_sa_val"] = True
+        params["normalize_sa_val"] = params['stepsize'] == 'adaptive'
         params["max_grad_norm"] = 1
         params["max_ep_per_iter"] = -1
         params["max_iter"] = 20
         params["fa_type"] = "nn"
         params["pe_type"] = "adam"
-        params["sgd_n_iter"] = 11
+        params["sgd_n_iter"] = 10
 
         n_trials = 10
         n_proc = mp.cpu_count()
