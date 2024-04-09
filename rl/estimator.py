@@ -220,10 +220,12 @@ class LinearFunctionApproximator(FunctionApproximator):
 
 # Define model
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim, params):
+    def __init__(self, input_dim, output_dim, params, seed=None):
         super().__init__()
+        # n_hidden_layers = 2
+        # layer_width = 128
         n_hidden_layers = 2
-        layer_width = 128
+        layer_width = 16
         if params.get("network_type", "small") == "deep":
             n_hidden_layers = 8
         elif params.get("network_type", "small") == "shallow":
@@ -242,8 +244,13 @@ class NeuralNetwork(nn.Module):
         # zero initialization (rather than random, which can yield non-uniform behavior)
         def init_weights(m):
             if isinstance(m, nn.Linear):
-                torch.nn.init.zeros_(m.weight)
-                m.bias.data.fill_(0.01)
+                g_cpu = torch.Generator()
+                g_cpu.manual_seed(seed)
+                torch.nn.init.xavier_normal_(m.weight, generator=g_cpu)
+                stdv = 1. / np.sqrt(m.weight.size(1))
+                torch.nn.init.normal_(m.bias, std=stdv, generator=g_cpu)
+                # torch.nn.init.xavier_uniform_(m.weight, generator=g_cpu)
+                # torch.nn.init.zeros_(m.weight)
         self.linears.apply(init_weights)
 
     def forward(self, x):
@@ -269,8 +276,10 @@ class NNFunctionApproximator(FunctionApproximator):
         self.models = []
         self.optimizers = []
         self.loss_fn = nn.MSELoss()
+        import time
+        t_0 = int(time.time())
         for _ in range(num_models):
-            model = NeuralNetwork(input_dim, output_dim, params).to(self.device)
+            model = NeuralNetwork(input_dim, output_dim, params, seed=t_0).to(self.device)
             pe_update = params.get("pe_update", "sgd")
             lr = params.get("sgd_base_stepsize", 0.001)
             weight_decay = params.get("sgd_alpha", 1e-3)
@@ -299,6 +308,8 @@ class NNFunctionApproximator(FunctionApproximator):
             self.optimizers.append(optimizer)
 
         self.max_grad_norm = params.get("max_grad_norm", np.inf)
+        if self.max_grad_norm <= 0:
+            self.max_grad_norm = np.inf
         self.sgd_n_iter = params.get("sgd_n_iter", 11)
         self.batch_size = params.get("batch_size", 32)
 
@@ -337,6 +348,7 @@ class NNFunctionApproximator(FunctionApproximator):
         test_losses = []
         batch_size = min(len(X), batch_size)
         sgd_n_iter = sgd_n_iter if sgd_n_iter > 0 else self.sgd_n_iter
+
         for _ in range(sgd_n_iter):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
@@ -376,7 +388,8 @@ class NNFunctionApproximator(FunctionApproximator):
                 pred_j = torch.squeeze(pred_j)
             if len(pred_j.shape) == 0:
                 continue
-            loss = self.loss_fn(pred_j, y_j)
+            # loss = self.loss_fn(pred_j, y_j)
+            loss = (pred_j - y_j).pow(2).mean()
 
             # Zero your gradients for every batch!
             self.optimizers[i].zero_grad()
@@ -389,6 +402,11 @@ class NNFunctionApproximator(FunctionApproximator):
 
             # Gather data and report
             last_loss = loss.item()
+
+
+        # TEMP: Print the weights
+        # for name, param in self.models[i].named_parameters():
+        #     print(f"params: {name}:\n{param}")
 
         return last_loss
 
