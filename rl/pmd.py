@@ -648,7 +648,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         """ Only scale reward, do not re-center """
         self.rwd_runstat.push(r)
         if self.params.get("normalize_rwd", False):
-            return np.divide(r, np.sqrt(self.rwd_runstat.var))
+            return np.divide(r, np.sqrt(self.rwd_runstat.var) + abs(self.rwd_runstat.mean))
             # return np.divide(r-self.rwd_runstat.mean, np.sqrt(self.rwd_runstat.var**0.5))
         return r
 
