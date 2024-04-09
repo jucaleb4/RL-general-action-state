@@ -139,6 +139,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         for _ in range(num_models):
             model = SGDRegressor(
                 learning_rate=params.get("sgd_stepsize", "constant"),
+                eta0=params.get("sgd_base_stepsize", 0.01),
                 max_iter=params.get("sgd_n_iter", 11),
                 alpha=params.get("sgd_alpha",1e-4),
                 warm_start=params.get("sgd_warmstart", False),
