@@ -33,7 +33,7 @@ def get_wandb_tuning_sweep_id():
     }
     sweep_config['parameters'] = parameters_dict
 
-    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v4-sanity")
+    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v4")
 
     return sweep_id
 
