@@ -1,0 +1,9 @@
+{
+    "alg": "ppo",
+    "env_name": "LunarLander-v2",
+    "max_iter": 10000000,
+    "max_ep": 2000,
+    "lunar_perturbed": true,
+    "ppo_clip_range": 1000000000,
+    "gamma": 0.995
+}

@@ -1,0 +1,8 @@
+{
+    "alg": "ppo",
+    "env_name": "VMPacking-v0",
+    "max_iter": 10000000,
+    "max_ep": 2000,
+    "ppo_clip_range": 0.2,
+    "gamma": 0.995
+}

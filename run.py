@@ -14,6 +14,7 @@ import json
 
 import gymnasium as gym
 import gym_examples
+import or_gym
 
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
@@ -24,25 +25,31 @@ from rl import PPO
 from rl import utils
 
 def main(alg, env_name, seed, settings, output={}):
-    env = gym.make(
-        env_name,
-        # render_mode="human",
-        max_episode_steps=1000, # can change length here!
-        enable_wind=True,
-    )
+    if "VMPacking" in env_name:
+        env = or_gym.make(env_name)
+    elif "LunarLander" in env_name:
+        env = gym.make(
+            env_name,
+            # render_mode="human",
+            max_episode_steps=1000, # can change length here!
+            gravity = -4.0 if settings.get("lunar_perturbed", False) else -10.,
+            enable_wind= settings.get("lunar_perturbed", False),
+        )
+    else:
+        env = gym.make(
+            env_name,
+            # render_mode="human",
+            max_episode_steps=1000, # can change length here!
+        )
 
     # add penalty of 1
-    env = gym.wrappers.TransformReward(env, lambda r : r-1)
+    if settings.get("lunar_perturbed", False):
+        env = gym.wrappers.TransformReward(env, lambda r : r-1)
 
     # env = gym.wrappers.TimeAwareObservation(env)
     # env = gym.wrappers.NormalizeObservation(env)
 
-    if "GridWorld" in env_name:
-        env = gym.make(
-            env_name,
-            size=4,
-            max_episode_steps=100, # can change length here!
-        )
+    if isinstance(env.observation_space, gym.spaces.Dict):
         env = gym.wrappers.FlattenObservation(env)
 
     fname = ""
@@ -112,10 +119,12 @@ if __name__ == "__main__":
         "MountainCar-v0", 
         "Pendulum-v1",
         "Humanoid-v4",
-        "HalfCheetah-v4"
+        "HalfCheetah-v4",
+        "VMPacking-v0",
         ],
         help="Environment"
     )
+    parser.add_argument('--lunar_perturbed', action="store_true", help="Perturb the lunar problem")
     parser.add_argument('--save_logs', action="store_true", help="Store logs to file")
     parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
     parser.add_argument('--settings_file', type=str, default="", help="Load settings")
@@ -143,6 +152,8 @@ if __name__ == "__main__":
     parser.add_argument("--sgd_stepsize", default="constant", choices=["constant", "optimal"])
     parser.add_argument("--sgd_n_iter", type=int, default=1_000, help="number of SGD iterations (e.g. 10-50x the rollout_len)")
     parser.add_argument("--sgd_alpha", type=float, default=0.0001, help="Regularization strength")
+
+    parser.add_argument("--ppo_clip_range", type=float, default=0.2, help="PPO clip range (negative value goes to inf)")
 
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
     parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")

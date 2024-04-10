@@ -12,6 +12,8 @@ import gym_examples
 
 from rl import RLAlg
 
+import numpy as np
+
 class PPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
@@ -34,6 +36,7 @@ class PPO(RLAlg):
             batch_size=64,
             gamma=0.995,
             gae_lambda=0.95,
+            clip_range=self.params.get("ppo_clip_range", 0.2) if self.params.get("ppo_clip_range", 0.2) >= 0 else np.inf,
             max_grad_norm=np.inf,
             normalize_advantage=False,
         )
