@@ -1,6 +1,7 @@
 import warnings 
 
 import numpy as np
+import numpy.linalg as la
 
 import gymnasium as gym
 
@@ -156,3 +157,98 @@ class RunningStat():
         idx_where_var_small = np.where(self.S < tol)[0]
         S[idx_where_var_small] = 1
         return S/(self.k-1.)
+
+def tsallis_policy_update(x, cum_grad, eta_t, lam=None):
+    """ Policy update for Tsallis Inf. Solves up to accuracy 1e-6 if warm-start
+    and 1e-8 for cold start.
+
+    We want to solve
+    \[
+        min_{x \in \Delta_n} { <cum_grad, x> + eta_t^{-1} Psi(x) }
+    \]
+    where (with a=0.5)
+    \[
+        Psi(x) := \sum\limits_{i=1}^n -(x_i^a)/a
+    \]
+    By KKT conditions, we want to find ({x_i}_i, y=lam) such 
+    \[
+        cum_grad_i - eta_t^{-1}/(1-a) * x_i^(a-1) + y = 0, for all i
+    \]
+    and x is probability simplex. Solving for x,
+    \[
+        x_i = [ (1-a) * eta_t * (cum_grad_i + y) ]^(1/(a-1))
+    \]
+    So we compute this x_i and do binary search on y until this quantity x_i is a probability simplex
+
+    :param x: current policy
+    :param cum_grad: cumulative gradient
+    :param eta_t: step size
+    :param lam: lam to use for warm start
+    """
+    tol = 1e-6
+    get_x_star = lambda y : np.power(np.maximum(tol, 0.5 * eta_t * (cum_grad + y)), -2)
+    max_num_newton_steps = 12
+
+    # try warm-star with Newton's method
+    if lam is not None:
+        for t in range(max_num_newton_steps):
+            prev_lam = lam
+            w = get_x_star(lam)
+            f = np.sum(w)-1
+            df = -2.*0.5*eta_t*np.sum(np.power(w, 1.5))
+            lam = lam - f/df
+            if la.norm(lam-prev_lam) <= tol:
+                u = get_x_star(lam)
+                x_star = u/np.sum(u)
+                return (x_star, lam)
+        
+    # cold start (if no warm_start flag or warm_start failed after 12 iterations)
+    direction = 0
+
+    # find whether lam should be positive or negative
+    u = get_x_star(0)
+    if abs(np.sum(u) - 1) <= tol:
+        x_star = u/np.sum(u)
+        return x_star
+    elif np.sum(u) > 1:
+        direction = 1
+    else:
+        direction = -1
+            
+    # exponential search
+    lam = direction
+    no_exp_search = True
+    u = get_x_star(lam)
+    while (direction == 1 and np.sum(u) > 1) or (direction == -1 and np.sum(u) < 1):
+        no_exp_search = False
+        lam *= 2
+        u = get_x_star(lam)
+
+    # binary search 
+    if direction == 1:
+        lo = 0 if no_exp_search else lam/(2.) 
+        hi = lam # value that made sum(u) <= 1
+        while hi-lo > tol:
+            lam = (hi+lo)/2
+            u = get_x_star(lam)
+            if abs(np.sum(u) - 1)<=tol: break
+            elif np.sum(u) < 1: hi = lam # makes the sum larger
+            else: lo = lam
+        best_lam = hi
+    else:
+        lo = lam # value that made sum(u) >= 1
+        hi = 0 if no_exp_search else lam/(2.)
+        while hi-lo > tol:
+            lam = (hi+lo)/2
+            u = get_x_star(lam)
+            if abs(np.sum(u) - 1)<=tol: break
+            elif np.sum(u) < 1: lo = lam
+            else: hi = lam
+        best_lam = lo
+
+    u = get_x_star(best_lam)
+    x_star = u/np.sum(u)
+    # if la.norm(u-x_star) >= 1e-1:
+    #     import ipdb; ipdb.set_trace()
+    #     pass
+    return (x_star, best_lam)

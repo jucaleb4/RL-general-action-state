@@ -28,7 +28,14 @@ def main(alg, env_name, seed, settings, output={}):
         env_name,
         # render_mode="human",
         max_episode_steps=1000, # can change length here!
+        enable_wind=True,
     )
+
+    # add penalty of 1
+    env = gym.wrappers.TransformReward(env, lambda r : r-1)
+
+    # env = gym.wrappers.TimeAwareObservation(env)
+    # env = gym.wrappers.NormalizeObservation(env)
 
     if "GridWorld" in env_name:
         env = gym.make(
@@ -37,8 +44,6 @@ def main(alg, env_name, seed, settings, output={}):
             max_episode_steps=100, # can change length here!
         )
         env = gym.wrappers.FlattenObservation(env)
-
-    env.reset()
 
     fname = ""
     if settings.get("save_logs", False):

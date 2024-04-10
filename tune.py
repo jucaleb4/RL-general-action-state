@@ -18,22 +18,28 @@ def get_wandb_tuning_sweep_id():
     sweep_config['metric'] = metric
 
     parameters_dict = {
-        'base_stepsize': {
-            'values': [0.01, 0.1, 1]
+        # 'base_stepsize': {
+        #     'values': [0.01, 0.1, 1]
             # 'distribution': 'uniform',
             # 'min': -2,
             # 'max': 1,
-        },
+        # },
         'stepsize_strategy': {
             'values': ['adaptive', 'pre-norm', 'standard']
         },
         'sgd_base_stepsize': {
-            'values': [0.001, 0.01, 0.1]   
+            'values': [0.001, 0.01, 0.1],
         },
+        'stepsize': {
+            'values': ['constant', 'decreasing'],
+        },
+        'sgd_n_iters': {
+            'values': [10, 10000],
+        }
     }
     sweep_config['parameters'] = parameters_dict
 
-    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v4")
+    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-linearfunction-v5")
 
     return sweep_id
 
@@ -44,6 +50,7 @@ def wandb_tune_pmd_linear(config=None):
         params = dict(config).copy()
         params["verbose"] = False
         params["stepsize"] = "decreasing"
+        params["base_stepsize"] = 0.01 if params["stepsize_strategy"] == "standard" else 1
         params["sgd_stepsize"] = "constant"
         params["gamma"] = 0.995
         params["use_advantage"] = True
@@ -51,15 +58,14 @@ def wandb_tune_pmd_linear(config=None):
         params["normalize_rwd"] = params['stepsize_strategy'] == 'pre-norm'
         params["dynamic_stepsize"] = False
         params["mu_h"] = 0
-        params["base_stepsize"] = params["base_stepsize"] * (0.1 if params['base_stepsize'] == 'standard' else 1.)
         params["sgd_base_stepsize"] = params["sgd_base_stepsize"]
         params["normalize_sa_val"] = params['stepsize_strategy'] == 'adaptive'
         params["max_grad_norm"] = -1
         params["max_ep_per_iter"] = -1
         params["max_iter"] = 20
         params["fa_type"] = "linear"
-        params["rollout_len"] = 2048
-        params["sgd_n_iter"] = 4096
+        params["rollout_len"] = 1000
+        params["sgd_warmstart"] = params["sgd_n_iters"] <= 10
 
         n_trials = 10
         n_proc = mp.cpu_count()

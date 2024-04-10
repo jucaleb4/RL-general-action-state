@@ -21,6 +21,7 @@ from rl.utils import get_space_property
 from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
+from rl.utils import tsallis_policy_update
 
 class FOPO(RLAlg):
     def __init__(self, env, params):
@@ -41,6 +42,9 @@ class FOPO(RLAlg):
         self.max_step = params["max_step"] if params.get("max_step",0) > 0 else np.inf
         self.emp_Q_max_arr = []
         self.sto_Q_max_arr = []
+        self.curr_beta_sum = 0
+        self.prev_beta_sum = 0
+        self.prev_lam_t = 0
 
     def _learn(self, max_iter):
         """ Runs PMD algorithm for `max_iter`s """
@@ -49,6 +53,9 @@ class FOPO(RLAlg):
 
         for t in range(max_iter):
             self.t = t
+
+            (beta_t, lam_t) = self.get_stepsize_schedule()
+            self.curr_beta_sum += beta_t
 
             self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
 
@@ -63,6 +70,8 @@ class FOPO(RLAlg):
 
             self.prepare_log()
             self.dump_log()
+            self.prev_beta_sum = self.curr_beta_sum
+            self.prev_lam_t = lam_t
 
             if t in checkpoint:
                 self.save_episode_reward_and_len()
@@ -155,35 +164,35 @@ class FOPO(RLAlg):
         raise NotImplemented
 
     def get_stepsize_schedule(self):
-        # no strong regularization
-        mu_h = self.params.get("mu_h", 0)
-        if mu_h == 0:
-            eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
-            base_stepsize = self.params.get("base_stepsize", -1) if self.params.get("base_stepsize", -1) > 0 else eta_0
-            if self.params.get("stepsize", "constant") == "constant":
-                return base_stepsize/np.sqrt(self.params["max_iter"])
-            elif self.params["stepsize"]  == "adapt_constant":
-                # TODO: Incorporate regularization
-                Q_inf = abs(self.emp_Q_max_arr[-1])
-                tQ_inf_sq = self.stoch_Q_second_moment()
-                M_h = self.params.get("M_h",0)
-                lam = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
-                return lam/np.sqrt(self.params["max_iter"])
-            elif self.params["stepsize"] == "decreasing":
-                return base_stepsize * float(self.t+1)**(-0.5)
-            elif self.params["stepsize"] == "adapt_decreasing":
-                Q_inf = abs(self.emp_Q_max_arr[-1])
-                tQ_inf_sq = self.stoch_Q_second_moment()
-                M_h = self.params.get("M_h",0)
-                lam = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
-                return lam/np.sqrt(self.t+1)
-            else:
-                raise Exception("Unknown stepsize rule {self.params['stepsize']}")
+        """ Returns stepsize for both PDA and PMD.
+
+        The step sizes $(beta_t, lam_t)$ are from PDA; We can set $eta_t = beta_t / lam_t$ in PDA.
+        """
+        eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
+        base_stepsize = self.params.get("base_stepsize", -1) if self.params.get("base_stepsize", -1) > 0 else eta_0
+        if self.params.get("stepsize", "constant") == "constant":
+            beta_t = 1./np.sqrt(self.params["max_iter"])
+            lam_t = 1./base_stepsize
+        # elif self.params["stepsize"]  == "adapt_constant":
+        #     # TODO: Incorporate regularization
+        #     Q_inf = abs(self.emp_Q_max_arr[-1])
+        #     tQ_inf_sq = self.stoch_Q_second_moment()
+        #     M_h = self.params.get("M_h",0)
+        #     lam_t = 1./np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
+        #     beta_t = 1./np.sqrt(self.params["max_iter"])
+        elif self.params["stepsize"] == "decreasing":
+            beta_t = self.t+1
+            lam_t = base_stepsize * (self.t+1)**(1.5)
+        # elif self.params["stepsize"] == "adapt_decreasing":
+        #     Q_inf = abs(self.emp_Q_max_arr[-1])
+        #     tQ_inf_sq = self.stoch_Q_second_moment()
+        #     M_h = self.params.get("M_h",0)
+        #     lam_t = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
+        #     beta_t = t+1
         else:
-            base_stepsize = mu_h/(self.t+1)
-            stepsize = (mu_h + 1./base_stepsize)**(-1)
-            stepsize *= (mu_h+1)**(self.t+1)
-            return stepsize
+            raise Exception("Unknown stepsize rule {self.params['stepsize']}")
+
+        return (beta_t, lam_t)
 
     def stoch_Q_second_moment(self, mv_avg_len=5):
         l = min(mv_avg_len, len(self.sto_Q_max_arr))
@@ -317,13 +326,13 @@ class PMDFiniteStateAction(FOPO):
 
     def policy_update(self): 
         if self.params.get("entropy", "kl").lower() == "kl":
-            self.kl_policy_update()
+            self.exp_policy_update()
         elif self.params["entropy"].lower() == "tsallis":
             self.tsallis_policy_update()
         else:
-            self.kl_policy_update()
+            self.exp_policy_update()
 
-    def kl_policy_update(self):
+    def exp_policy_update(self):
         """ Policy update with PMD and KL divergence """
         eta = self.get_stepsize_schedule()
         G = np.copy(self.Q_est)
@@ -444,6 +453,9 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.params["fa_type"] = "linear"
 
     def _get_logpolicy(self, s):
+        if not self.updated_at_least_once:
+            return np.zeros(self.n_actions, dtype=float)
+
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
         for i in range(self.n_actions):
             if self.params["fa_type"] == "linear":
@@ -452,14 +464,14 @@ class PMDGeneralStateFiniteAction(FOPO):
                 log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s), i)
             else:
                 log_policy_at_s[i] = self.fa_Q_accum.predict(np.atleast_2d(s), i)
-        # TEMP (more robust way to do regularization)
 
         return log_policy_at_s
 
     def _get_policy(self, s):
+        if not self.updated_at_least_once:
+            return np.ones(self.n_actions, dtype=float)/self.n_actions
+
         log_policy_at_s = self._get_logpolicy(s)
-        mu_h = self.params.get("mu_h", 0)
-        log_policy_at_s *= (mu_h+1)**(-self.t-1)
         policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
         policy_at_s = np.atleast_2d(policy_at_s)
 
@@ -469,13 +481,22 @@ class PMDGeneralStateFiniteAction(FOPO):
 
     def policy_sample(self, s):
         """ Samples random action from current policy """
-        if not self.updated_at_least_once:
-            return self.rng.integers(self.n_actions)
-
         eps = self.params.get("eps_explore", 0)
         assert 0 <= eps <= 1
 
-        pi = (1.-eps)*self._get_policy(self.normalize_obs(s)) + eps/self.n_actions
+        if self.params.get("entropy", "kl").lower() == "kl":
+            pi = self._get_policy(self.normalize_obs(s))
+        elif self.params["entropy"].lower() == "tsallis":
+            assert self.params.get("stepsize", "constant") == "decreasing"
+            g = self._get_weighted_logpolicy(self.normalize_obs(s))
+            prev_lam = None
+            if hasattr(self, "prev_lam"):
+                prev_lam = self.prev_lam
+            pi, lam = tsallis_policy_update(None, g, 1., prev_lam)
+            self.prev_lam = lam
+        else:
+            raise Exception(f"Unknown entropy {self.params['entropy']}")
+            
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
@@ -550,47 +571,96 @@ class PMDGeneralStateFiniteAction(FOPO):
         raise NotImplemented
 
     def policy_update(self): 
-        if self.params.get("entropy", "kl").lower() == "kl":
-            self.kl_policy_update()
-        elif self.params["entropy"].lower() == "tsallis":
-            self.tsallis_policy_update()
-        else:
-            self.kl_policy_update()
+        self.exp_policy_update()
 
         # TEMP
         self.record_policy_change()
 
-    def kl_policy_update(self):
-        """ Policy update with PMD and KL divergence """
+    def exp_policy_update(self):
         self.updated_at_least_once = True
-        eta_t = self.get_stepsize_schedule()
-
         if self.params["fa_type"] == "linear":
-            self.last_theta_accum = np.copy(self.theta_accum)
-            self.last_intercept_accum = np.copy(self.intercept_accum)
-            self.theta_accum += eta_t * self.last_thetas
-            self.intercept_accum += eta_t * self.last_intercepts
+            self.exp_policy_update_linear()
+        elif self.params["fa_type"] == "nn":
+            self.exp_policy_update_nn()
         else:
-            train_loss = 0
-            test_loss = 0
-            not_visited_actions = []
-            for i in range(self.n_actions):
-                X_i = self._last_s_visited_at_a[i]
-                if X_i is None or len(X_i) == 0:
-                    not_visited_actions.append(i)
-                    continue
-                Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
-                y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
-                target_i = Q_acc_pred + eta_t*y_i
-                # print(la.norm(Q_acc_k_pred)**2/len(Q_acc_k_pred), eta_t*la.norm(Q_k_pred)**2/len(Q_k_pred))
-                train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i, validation_frac=0)
-                train_loss += train_losses[-1]
-                test_loss += 0 if len(test_losses)==0 else test_losses[-1]
-            if len(not_visited_actions) > 0:
-                print(f"Did not visit actions {not_visited_actions}")
-            self.last_po_loss = train_loss/self.n_actions
-            self.last_po_test_loss = test_loss/self.n_actions
-            return train_losses, test_losses
+            raise Exception(f"Unknown function approximation {self.params['fa_type']}")
+
+    def exp_policy_update_linear(self):
+        """
+        For entropy regularization with strong convexity $mu_h$, PDA has the explicit argmin solution of
+        $$
+            \pi_{k+1}(s) 
+
+            \propto exp{ -\sum_{t=0}^k \beta_t \phi(s,*;\theta_t)/(\bar{\beta}_k * \mu_h + \lambda_k) }
+        $$
+        (for argmax, remove negative sign with a positive sign) while PMD has
+        $$
+            \pi_{k+1}(s) 
+            \propto exp{ (1+\eta_t*\mu_h)^{-1} * (log(\pi_k(s)) - \eta_t \phi(s,*;\theta_t)) }.
+            \propto exp{ -\sum_{t=0}^k (\pi_{\tau=t}^k (1+\eta_t*\mu_h))^{-1} * \eta_t \phi(s,*\theta_t) }
+        $$
+        """
+        (beta_t, lam_t) = self.get_stepsize_schedule()
+        mu_h = self.params.get("mu_h", 0)
+        self.last_theta_accum = np.copy(self.theta_accum)
+        self.last_intercept_accum = np.copy(self.intercept_accum)
+
+        if self.params.get("stepsize", "constant") == "constant":
+            # corresponds to PMD
+            eta_t = beta_t/lam_t # see self.get_stepsize_schedule
+            alpha_t = 1+eta_t*mu_h
+
+            self.theta_accum = 1./alpha_t * (self.theta_accum + eta_t * self.last_thetas)
+            self.intercept_accum = 1./alpha_t * (self.intercept_accum + eta_t * self.last_intercepts)
+        else:
+            # corresponds to PDA
+            curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
+            prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
+
+            self.theta_accum = (prev_alpha_t/curr_alpha_t) * self.theta_accum \
+                               + (beta_t/curr_alpha_t) * self.last_thetas
+            self.intercept_accum = (prev_alpha_t/curr_alpha_t) * self.intercept_accum  \
+                                    + (beta_t/curr_alpha_t) * self.last_intercepts
+
+    def exp_policy_update_nn(self):
+        """ Policy update with PMD and KL divergence """
+        (beta_t, lam_t) = self.get_stepsize_schedule()
+        mu_h = self.params.get("mu_h", 0)
+        if self.params.get("stepsize", "constant") == "constant":
+            # corresponds to PMD
+            eta_t = beta_t/lam_t # see self.get_stepsize_schedule
+            alpha_t = 1+eta_t*mu_h
+
+            alpha_1 = 1./alpha_t
+            alpha_2 = eta_t/alpha_t
+        else:
+            # corresponds to PDA
+            curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
+            prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
+
+            alpha_1 = prev_alpha_t/curr_alpha_t
+            alpha_2 = beta_t/curr_alpha_t
+
+        train_loss = 0
+        test_loss = 0
+        not_visited_actions = []
+        for i in range(self.n_actions):
+            X_i = self._last_s_visited_at_a[i]
+            if X_i is None or len(X_i) == 0:
+                not_visited_actions.append(i)
+                continue
+            Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
+            y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
+            target_i = alpha_1 * Q_acc_pred + alpha_2*y_i
+            train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i, validation_frac=0)
+            train_loss += train_losses[-1]
+            test_loss += 0 if len(test_losses)==0 else test_losses[-1]
+        if len(not_visited_actions) > 0:
+            print(f"Did not visit actions {not_visited_actions}")
+
+        self.last_po_loss = train_loss/self.n_actions
+        self.last_po_test_loss = test_loss/self.n_actions
+        return train_losses, test_losses
 
     def tsallis_policy_update(self):
         """ Policy update with PMD and Tsallis divergence (with p=1/2) """
@@ -680,7 +750,13 @@ class PMDGeneralStateFiniteAction(FOPO):
         if self.params["fa_type"] == "nn":
             self.msg += f"  {'po_train_loss':<{l}}: {self.last_po_loss:.4e}\n"
             self.msg += f"  {'po_test_loss':<{l}}: {self.last_po_test_loss:.4e}\n"
-        self.msg += f"  {'stepsize':<{l}}: {self.get_stepsize_schedule():.4e}\n"
+        if self.params.get("stepsize", "constant") == "constant":
+            (beta_t, lam_t) = self.get_stepsize_schedule()
+            eta_t = beta_t/lam_t
+            self.msg += f"  {'stepsize':<{l}}: {eta_t:.4e}\n"
+        else:
+            (beta_t, lam_t) = self.get_stepsize_schedule()
+            self.msg += f"  {'stepsize':<{l}}: {beta_t:.2e}, {lam_t:.2e}\n"
         if self.params["fa_type"] == "linear":
             coef_change = la.norm(self.last_theta_accum - self.theta_accum)
             bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)

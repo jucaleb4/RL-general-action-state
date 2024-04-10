@@ -145,6 +145,7 @@ class LinearFunctionApproximator(FunctionApproximator):
                 warm_start=params.get("sgd_warmstart", False),
                 tol=0.0,
                 n_iter_no_change=params.get("sgd_n_iter", 1000),
+                fit_intercept=False,
             )
 
             # model = Lasso(
@@ -232,12 +233,12 @@ class NeuralNetwork(nn.Module):
         elif params.get("network_type", "small") == "shallow":
             layer_depth = 512
 
-        modules = nn.ModuleList([nn.Linear(input_dim, layer_width)])
+        modules = nn.ModuleList([nn.Linear(input_dim, layer_width, bias=False)])
         modules.extend([nn.Tanh()])
         for _ in range(1, n_hidden_layers):
-            modules.extend([nn.Linear(layer_width, layer_width)])
+            modules.extend([nn.Linear(layer_width, layer_width, bias=False)])
             modules.extend([nn.Tanh()])
-        modules.extend([nn.Linear(layer_width, output_dim)])
+        modules.extend([nn.Linear(layer_width, output_dim, bias=False)])
         
         # https://discuss.pytorch.org/t/notimplementederror-module-modulelist-is-missing-the-required-forward-function/175049
         self.linears = nn.Sequential(*modules)
@@ -253,8 +254,8 @@ class NeuralNetwork(nn.Module):
                 # torch.nn.init.normal_(m.bias, std=stdv, generator=g_cpu)
                 # torch.nn.init.xavier_uniform_(m.weight, generator=g_cpu)
                 torch.nn.init.zeros_(m.weight)
-                torch.nn.init.zeros_(m.bias)
-        self.linears.apply(init_weights)
+                # torch.nn.init.zeros_(m.bias)
+        # self.linears.apply(init_weights)
 
     def forward(self, x):
         # if len(x.shape) > 1:

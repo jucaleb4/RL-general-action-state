@@ -17,7 +17,7 @@ class PPO(RLAlg):
         super().__init__(env, params)
 
     def _learn(self, max_iter):
-        self.env = Monitor(env=self.env)
+        self.env = Monitor(env=self.env, gamma=self.params["gamma"])
     
         max_ep = self.params["max_ep"] if self.params["max_ep"] > 0 else np.inf
         callback_max_episodes = StopTrainingOnMaxEpisodes(
@@ -28,6 +28,14 @@ class PPO(RLAlg):
             "MlpPolicy", 
             self.env, 
             verbose=1, 
+            n_steps=2048,
+            learning_rate=3e-4,
+            n_epochs=10,
+            batch_size=64,
+            gamma=0.995,
+            gae_lambda=0.95,
+            max_grad_norm=np.inf,
+            normalize_advantage=False,
         )
         model.learn(max_iter, callback=callback_max_episodes)
 
