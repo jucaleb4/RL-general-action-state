@@ -36,10 +36,15 @@ def main(alg, env_name, seed, settings, output={}):
             enable_wind= settings.get("lunar_perturbed", False),
         )
     else:
+        if "GridWorld" in env_name:
+            full_env_name = os.path.join("gym_examples", env_name)
+        else:
+            full_env_name = env_name
         env = gym.make(
-            env_name,
+            full_env_name,
             # render_mode="human",
             max_episode_steps=1000, # can change length here!
+            size=settings.get("gridworld_size", 10),
         )
 
     # add penalty of 1
