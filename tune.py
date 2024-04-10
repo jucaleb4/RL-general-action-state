@@ -49,7 +49,6 @@ def wandb_tune_pmd_linear(config=None):
         config = wandb.config
         params = dict(config).copy()
         params["verbose"] = False
-        params["stepsize"] = "decreasing"
         params["base_stepsize"] = 0.01 if params["stepsize_strategy"] == "standard" else 1
         params["sgd_stepsize"] = "constant"
         params["gamma"] = 0.995
@@ -58,7 +57,6 @@ def wandb_tune_pmd_linear(config=None):
         params["normalize_rwd"] = params['stepsize_strategy'] == 'pre-norm'
         params["dynamic_stepsize"] = False
         params["mu_h"] = 0
-        params["sgd_base_stepsize"] = params["sgd_base_stepsize"]
         params["normalize_sa_val"] = params['stepsize_strategy'] == 'adaptive'
         params["max_grad_norm"] = -1
         params["max_ep_per_iter"] = -1

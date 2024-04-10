@@ -9,7 +9,8 @@ from run import main as run_pmd_exp
 
 def get_wandb_tuning_sweep_id():
     sweep_config = {
-        "method": "random",
+        # "method": "random",
+        "method": "grid",
     }
 
     metric = {
@@ -19,29 +20,22 @@ def get_wandb_tuning_sweep_id():
     sweep_config['metric'] = metric
 
     parameters_dict = {
-        'base_stepsize': {
-            'distribution': 'uniform',
-            'min': -2,
-            'max': 1,
+        'stepsize_strategy': {
+            'values': ['adaptive', 'pre-norm', 'standard']
         },
-        'rollout_len': { 
-            'distribution': 'q_log_uniform_values',
-            'q': 2,
-            'min': 1024,
-            'max': 4096,
-        },
-        'sgd_alpha': {
-            'distribution': 'uniform',
-            'min': -5,
-            'max': -1,
+        'sgd_base_stepsize': {
+            'values': [0.001, 0.01, 0.1],
         },
         'stepsize': {
-            'values': ['adaptive', 'pre-norm', 'standard']
-        }
+            'values': ['constant', 'decreasing'],
+        },
+        'pe_type': {
+            'values': ['adam', 'sgd'],
+        },
     }
     sweep_config['parameters'] = parameters_dict
 
-    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-nnfunction-v4")
+    sweep_id = wandb.sweep(sweep_config, project=f"rl-general-pmd-nnfunction-v5")
 
     return sweep_id
 
@@ -51,22 +45,22 @@ def wandb_tune_pmd_linear(config=None):
         config = wandb.config
         params = dict(config).copy()
         params["verbose"] = False
-        params["stepsize"] = "decreasing"
+        params["base_stepsize"] = 0.01 if params["stepsize_strategy"] == "standard" else 1
         params["sgd_stepsize"] = "constant"
         params["gamma"] = 0.995
-        params["use_advantage"] = params['stepsize'] == 'pre-norm'
+        params["use_advantage"] = True
+        params["normalize_obs"] = False
         params["normalize_rwd"] = params['stepsize'] == 'pre-norm'
         params["dynamic_stepsize"] = False
         params["mu_h"] = 0
-        params["base_stepsize"] = 10**params["base_stepsize"] * (0.1 if params['stepsize'] == 'standard' else 1.)
-        params["sgd_alpha"] = 10**params["sgd_alpha"]
-        params["normalize_sa_val"] = params['stepsize'] == 'adaptive'
+        params["normalize_sa_val"] = params['stepsize_strategy'] == 'adaptive'
         params["max_grad_norm"] = 1
         params["max_ep_per_iter"] = -1
         params["max_iter"] = 20
+        params["rollout_len"] = 1000
         params["fa_type"] = "nn"
         params["pe_type"] = "adam"
-        params["sgd_n_iter"] = 10
+        params["sgd_n_iters"] = 10
 
         n_trials = 10
         n_proc = mp.cpu_count()
