@@ -463,7 +463,11 @@ class PMDGeneralStateFiniteAction(FOPO):
                 self.fa_Q.set_intercept(self.intercept_accum[i], i)
                 log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s), i)
             else:
-                log_policy_at_s[i] = self.fa_Q_accum.predict(np.atleast_2d(s), i)
+                # Since fa_Q_accum learns:
+                # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t$,
+                # which is the average, we need to scale it for PDA
+                alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
+                log_policy_at_s[i] = alpa * self.fa_Q_accum.predict(np.atleast_2d(s), i)
 
         return log_policy_at_s
 
@@ -626,20 +630,16 @@ class PMDGeneralStateFiniteAction(FOPO):
         """ Policy update with PMD and KL divergence """
         (beta_t, lam_t) = self.get_stepsize_schedule()
         mu_h = self.params.get("mu_h", 0)
-        if self.params.get("stepsize", "constant") == "constant":
-            # corresponds to PMD
-            eta_t = beta_t/lam_t # see self.get_stepsize_schedule
-            alpha_t = 1+eta_t*mu_h
+        assert self.params.get("stepsize", "constant") == "decreasing", "NN only allows decreasing step size"
+        # corresponds to PDA
+        # curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
+        # prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
 
-            alpha_1 = 1./alpha_t
-            alpha_2 = eta_t/alpha_t
-        else:
-            # corresponds to PDA
-            curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
-            prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
+        # alpha_1 = prev_alpha_t/curr_alpha_t
+        # alpha_2 = beta_t/curr_alpha_t
 
-            alpha_1 = prev_alpha_t/curr_alpha_t
-            alpha_2 = beta_t/curr_alpha_t
+        alpha_1 = self.prev_beta_sum/self.curr_beta_sum
+        alpha_2 = beta_t/self.curr_beta_sum
 
         train_loss = 0
         test_loss = 0
