@@ -1,6 +1,7 @@
 {
     "alg": "pmd",
     "env_name": "LunarLander-v2",
+    "lunar_perturbed": true,
     "base_stepsize": 100,
     "stepsize": "decreasing",
     "mu_h": 0.01,
@@ -13,8 +14,8 @@
     "sgd_n_iter": 10000,
     "sgd_alpha": 0.0001, 
     "sgd_stepsize": "constant",
-    "max_iter": 1000,
-    "max_ep": 1000,
+    "max_iter": 10000,
+    "max_ep": 10000,
     "max_step": -1,
     "max_ep_per_iter": -1,
     "max_grad": 1,
