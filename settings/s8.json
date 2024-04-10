@@ -4,7 +4,7 @@
     "lunar_perturbed": true,
     "base_stepsize": 1,
     "stepsize": "decreasing",
-    "mu_h": 0,
+    "mu_h": 0.0,
     "gamma": 0.99,
     "use_advantage": false,
     "normalize_obs": false,

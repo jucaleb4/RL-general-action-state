@@ -4,7 +4,7 @@
     "lunar_perturbed": true,
     "base_stepsize": 1,
     "stepsize": "decreasing",
-    "mu_h": 0.01,
+    "mu_h": 0.0,
     "gamma": 0.995,
     "entropy": "kl",
     "use_advantage": true,
