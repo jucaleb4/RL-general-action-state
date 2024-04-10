@@ -5,5 +5,6 @@
     "max_ep": 10000,
     "lunar_perturbed": true,
     "ppo_clip_range": 0.2,
-    "gamma": 0.995
+    "gamma": 0.995,
+    "save_logs": true
 }

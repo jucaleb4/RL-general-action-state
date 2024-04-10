@@ -33,9 +33,6 @@ def get_wandb_tuning_sweep_id():
         'stepsize': {
             'values': ['constant', 'decreasing'],
         },
-        'sgd_n_iters': {
-            'values': [10, 10000],
-        }
     }
     sweep_config['parameters'] = parameters_dict
 
@@ -51,6 +48,7 @@ def wandb_tune_pmd_linear(config=None):
         params["verbose"] = False
         params["base_stepsize"] = 0.01 if params["stepsize_strategy"] == "standard" else 1
         params["sgd_stepsize"] = "constant"
+        params["sgd_n_iter"] = 11
         params["gamma"] = 0.995
         params["use_advantage"] = True
         params["normalize_obs"] = False

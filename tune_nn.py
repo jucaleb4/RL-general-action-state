@@ -60,7 +60,7 @@ def wandb_tune_pmd_linear(config=None):
         params["rollout_len"] = 1000
         params["fa_type"] = "nn"
         params["pe_type"] = "adam"
-        params["sgd_n_iters"] = 10
+        params["sgd_n_iter"] = 10
 
         n_trials = 10
         n_proc = mp.cpu_count()
