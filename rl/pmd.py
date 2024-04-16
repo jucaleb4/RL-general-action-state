@@ -466,8 +466,10 @@ class PMDGeneralStateFiniteAction(FOPO):
                 # Since fa_Q_accum learns:
                 # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t$,
                 # which is the average, we need to scale it for PDA
+                (beta_t, lam_t) = self.get_stepsize_schedule()
+                mu_h = self.params.get("mu_h", 0)
                 alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
-                log_policy_at_s[i] = alpa * self.fa_Q_accum.predict(np.atleast_2d(s), i)
+                log_policy_at_s[i] = alpha * self.fa_Q_accum.predict(np.atleast_2d(s), i)
 
         return log_policy_at_s
 
