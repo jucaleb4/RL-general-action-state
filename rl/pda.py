@@ -56,8 +56,6 @@ class PDAGeneralStateAction(FOPO):
 
         self.mu_Q = 0
         self.mu_d = params["mu_h"] - self.mu_Q
-        self.prev_beta_sum = 0
-        self.beta_sum = 0
         self.sampling_grad = []
 
         # uniform policy and function approximation
@@ -70,21 +68,22 @@ class PDAGeneralStateAction(FOPO):
 
     def check_PDAGeneralStateAction_params(self):
         self.params["mu_h"] = self.params.get("mu_h", 0)
+        assert self.params["stepsize"] == "decreasing", "PDA can only do decreasing step size"
 
-    def get_stepsize_schedule(self):
-        """ Returns (beta_t, lambda_t) """
-        if self.mu_d > 0:
-            return (self.t+1, self.mu_d)
-        elif self.mu_d == 0:
-            base_stepsize = self.params.get("base_stepsize", 1.)
-            # TODO: How to make this parameter free
-            lam = base_stepsize
-            return (self.t+1, lam*(self.t+1)**(1.5))
-        else:
-            # if self.params["stepsize"] == "decreasing":
-            #     return (self.t+1, (self.t+1)*abs(self.mu_d))
-            max_iter = self.params["max_iter"]
-            return (self.t+1, max_iter*(max_iter+1)*abs(self.mu_d))
+    # def get_stepsize_schedule(self):
+    #     """ Returns (beta_t, lambda_t) """
+    #     eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
+    #     base_stepsize = self.params.get("base_stepsize", -1) if self.params.get("base_stepsize", -1) > 0 else eta_0
+    #     if self.params.get("stepsize", "constant") == "constant":
+    #         beta_t = 1./np.sqrt(self.params["max_iter"])
+    #         lam_t = 1./base_stepsize
+    #     elif self.params["stepsize"] == "decreasing":
+    #         beta_t = self.t+1
+    #         lam_t = base_stepsize * (self.t+1)**(1.5)
+    #     else:
+    #         raise Exception("Unknown stepsize rule {self.params['stepsize']}")
+# 
+#         return (beta_t, lam_t)
 
     def policy_sample(self, s):
         """ 
@@ -135,13 +134,14 @@ class PDAGeneralStateAction(FOPO):
         while 1:
             (_, lam_t) = self.get_stepsize_schedule()
 
-            scale = lam_t/(self.beta_sum)
+            tol_scale = 1./(self.curr_beta_sum)
+            bregman_scale = lam_t * tol_scale
 
             # TODO: Add regularization
             f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)))  \
-                        + scale*0.5*la.norm(a-self.pi_0)**2
+                        + bregman_scale*0.5*la.norm(a-self.pi_0)**2
             df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)))[len(s_):]  \
-                        + scale*(a-self.pi_0)
+                        + bregman_scale*(a-self.pi_0)
             oracle = BlackBox(f, df)
 
             # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
@@ -150,7 +150,7 @@ class PDAGeneralStateAction(FOPO):
                 oracle, 
                 np.copy(self.pi_0), # a_0, 
                 alpha=0.0, 
-                tol=1e-4/self.beta_sum, 
+                tol=1e-4 * tol_scale,
                 stop_nonconvex=stop_nonconvex,
                 first_eta=self._first_eta
             )
@@ -203,6 +203,7 @@ class PDAGeneralStateAction(FOPO):
 
     def policy_update(self): 
         self.updated_at_least_once = True
+        self.just_updated_policy = True
         self.l2_policy_update()
 
     def l2_policy_update(self):
@@ -212,18 +213,21 @@ class PDAGeneralStateAction(FOPO):
         min_\theta{ | Q^k(s,a;\theta) - \bar{\beta}_k^{-1}*[\bar{\beta}_{k-1}*Q^{k-1}(s,a; \theta_{[k-1]}) + Q(s,a; \theta_k) |_2}
 
         """
-        self.just_updated_policy = True
+        (beta_t, lam_t) = self.get_stepsize_schedule()
+        mu_h = self.params.get("mu_h", 0)
+        # corresponds to PDA
+        curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
+        prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
 
-        (beta_t, _) = self.get_stepsize_schedule()
-        self.prev_beta_sum = self.beta_sum
-        self.beta_sum += beta_t
+        alpha_1 = prev_alpha_t/curr_alpha_t
+        alpha_2 = beta_t/curr_alpha_t
 
         X = self._last_sa_visited
         y_arr = []
         # iterate over samples we used to estimate the last Q_{\pi_k}
         Q_acc_pred = self.fa_Q_accum.predict(X)
-        y_i        = self._last_y
-        y = (self.beta_sum)**(-1)*(self.prev_beta_sum*Q_acc_pred + beta_t*y_i)
+        _y         = self._last_y
+        y = alpha_1 * self.prev_beta_sum*Q_acc_pred + beta_t*y_i
 
         # approximately solve apolicy update
         self.last_po_loss, _ = self.fa_Q_accum.update(X,y, validation_frac=0)
