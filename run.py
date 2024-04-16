@@ -1,5 +1,6 @@
 import os
 import sys
+import ast
 
 # for perlmutter
 if os.path.exists("/global/homes/c/cju33/.conda/envs/venv/lib/python3.12/site-packages"):
@@ -20,9 +21,13 @@ from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
 from rl import PDAGeneralStateAction
 from rl import QLearn
-from rl import PPO
 
 from rl import utils
+from rl import create_and_validate_settings
+
+def dictionary_clear_nones(dt):
+    """ Returns a copied dictionary and removes keys whose value is None """
+    return dict({k: v for k, v in dt.items() if v is not None})
 
 def main(alg, env_name, seed, settings, output={}):
     if "VMPacking" in env_name:
@@ -86,6 +91,7 @@ def main(alg, env_name, seed, settings, output={}):
     elif alg == "qlearn":
         alg = QLearn(env, params)
     elif alg == "ppo":
+        from rl.ppo import PPO
         alg = PPO(env, params)
     else:
         return 
@@ -112,13 +118,15 @@ def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
 if __name__ == "__main__":
     # TODO: Print settings of the problem
     # TODO: Reformat code so we don't pass params in the final function invokation
+    
     parser = argparse.ArgumentParser(
         prog='RL algs', 
         description='RL algorithms',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    """
     parser.add_argument('--alg', default="pmd", choices=["pmd", "pda", "qlearn", "ppo"], help="Algorithm")
-    parser.add_argument('--env_name', default="LunarLander-v2", choices=[
+    parser.add_argument('--env_name', choices=[
         "gym_examples/GridWorld-v0", 
         "LunarLander-v2", 
         "MountainCar-v0", 
@@ -129,11 +137,12 @@ if __name__ == "__main__":
         ],
         help="Environment"
     )
-    parser.add_argument('--lunar_perturbed', action="store_true", help="Perturb the lunar problem")
-    parser.add_argument('--save_logs', action="store_true", help="Store logs to file")
-    parser.add_argument('--seed', type=int, default=0, help="Seed (or starting seed if parallel runs)")
-    parser.add_argument('--settings_file', type=str, default="", help="Load settings")
+    parser.add_argument('--lunar_perturbed', type=ast.literal_eval, help="Perturb the lunar problem")
+    parser.add_argument('--seed', type=int, help="Seed (or starting seed if parallel runs)")
+    """
+    parser.add_argument('--settings', type=str, required=True, help="Load settings")
 
+    """
     parser.add_argument('--max_iter', type=int, default=100, help="Max number of training iterations")
     parser.add_argument('--max_ep', type=int, default=-1, help="Max number of training episodes")
     parser.add_argument('--fa_type', default="none", choices=["none", "linear", "nn"], help="Type of function approximation")
@@ -163,14 +172,22 @@ if __name__ == "__main__":
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
     parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")
 
+    """
     args = parser.parse_args()
-    settings = vars(args)
-    if len(args.settings_file) > 6 and args.settings_file[-4:] == "json":
-        with open(args.settings_file, "r") as fp:
-            new_settings = json.load(fp)
-        settings.update(new_settings)
 
-    if args.parallel:
+    if len(args.settings) > 6 and args.settings[-len('.json'):] == '.json':
+        with open(args.settings, "r") as fp:
+            settings = json.load(fp)
+
+        settings, valid_hyperparams  = create_and_validate_settings(settings)
+        if not valid_hyperparams:
+            exit(0)
+    else:
+        raise Exception("No valid json file %s passed in" % args.settings)
+
+    imp
+
+    if settings.parallel:
         run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
     else:
         # no seeding yet
