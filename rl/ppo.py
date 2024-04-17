@@ -18,45 +18,44 @@ class PPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
 
-    def _learn(self, max_iter):
+    def _learn(self, max_iters):
         self.env = Monitor(env=self.env, gamma=self.params["gamma"])
     
-        max_ep = self.params["max_ep"] if self.params["max_ep"] > 0 else np.inf
+        max_episodes = self.params["max_episodes"] if self.params["max_episodes"] > 0 else np.inf
         callback_max_episodes = StopTrainingOnMaxEpisodes(
-            max_episodes=max_ep, 
+            max_episodes=max_episodes, 
             verbose=1
         )
+        clip_range = self.params["ppo_clip_range"] if self.params["ppo_clip_range"] >= 0 else np.inf
+        max_grad_norm = self.params["ppo_max_grad_norm"] if self.params["ppo_max_grad_norm"] >= 0 else np.inf
         model = sb3.PPO(
-            "MlpPolicy", 
-            self.env, 
+            policy=self.params['ppo_policy'],
+            env=self.env, 
             verbose=1, 
-            n_steps=2048,
-            learning_rate=3e-4,
-            n_epochs=10,
-            batch_size=64,
-            gamma=0.995,
-            gae_lambda=0.95,
-            clip_range=self.params.get("ppo_clip_range", 0.2) if self.params.get("ppo_clip_range", 0.2) >= 0 else np.inf,
-            max_grad_norm=np.inf,
-            normalize_advantage=False,
+            n_steps=self.params['rollout_len'],
+            learning_rate=self.params['ppo_lr'],
+            n_epochs=self.params['ppo_n_epochs'],
+            batch_size=self.params['ppo_batch_size'],
+            gamma=self.params['gamma'],
+            gae_lambda=self.params['ppo_gae_lambda'],
+            clip_range=clip_range,
+            max_grad_norm=max_grad_norm,
+            normalize_advantage=self.params["ppo_normalize_adv"],
         )
-        model.learn(max_iter, callback=callback_max_episodes)
+        model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()
         time_arr = self.env.get_episode_times() 
         print(f"Runtime: {np.sum(time_arr):.2f}s")
 
-        if len(self.params["fname"]) > 0:
-            self.save_episode_rewards(rwd_arr, len_arr)
+        log_file = os.path.join(self.params['log_folder'], "seed=%i.csv" % self.params['seed'])
+        self.save_episode_rewards(log_file, rwd_arr, len_arr)
 
-    def save_episode_rewards(self, rwd_arr, len_arr):
-        if "fname" not in self.params:
-            warnings.warn("No filename given, not saving")
-            return
+    def save_episode_rewards(self, log_file, rwd_arr, len_arr):
         fmt="%1.2f,%i"
         arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
-        with open(self.params["fname"], "wb") as fp:
+        with open(log_file, "wb") as fp:
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
-        print(f"Saved episode data to {self.params['fname']}")
+        print(f"Saved episode data to {log_file}")

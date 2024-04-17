@@ -26,7 +26,6 @@ from rl.utils import tsallis_policy_update
 class FOPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
-        self.check_params()
 
         # initialize
         self.t = -1
@@ -35,11 +34,11 @@ class FOPO(RLAlg):
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
 
-        self.n_ep = 0
+        self.n_episodes = 0
         self.n_step = 0
         self.last_iter_ep = 0
-        self.max_ep = params["max_ep"] if params.get("max_ep",0) > 0 else np.inf
-        self.max_step = params["max_step"] if params.get("max_step",0) > 0 else np.inf
+        self.max_episodes = params['max_episodes'] if params['max_episodes'] > 0 else np.inf
+        self.max_steps = params['max_steps'] if params'"max_steps'] > 0 else np.inf
         self.emp_Q_max_arr = []
         self.sto_Q_max_arr = []
         self.curr_beta_sum = 0
@@ -57,11 +56,9 @@ class FOPO(RLAlg):
             (beta_t, lam_t) = self.get_stepsize_schedule()
             self.curr_beta_sum += beta_t
 
-            self.params["eps_explore"] = 0. # 0.05 + 0.95 * 0.99**t
-
             self.collect_rollouts()
 
-            if self.n_ep == self.max_ep:
+            if self.n_episodes == self.max_episodes:
                 break
 
             self.policy_evaluate()
@@ -77,7 +74,7 @@ class FOPO(RLAlg):
                 self.save_episode_reward_and_len()
                 self.save_policy_change()
 
-            if self.n_ep >= self.max_ep or self.n_step >= self.max_step:
+            if self.n_episodes >= self.max_episodes or self.n_step >= self.max_steps:
                 break
 
         self.save_episode_reward_and_len()
@@ -86,20 +83,6 @@ class FOPO(RLAlg):
         ep_cum_rwds = self.rollout.get_ep_rwds()
         t = min(100, len(ep_cum_rwds))
         return np.mean(ep_cum_rwds[-t:])
-
-    def check_params(self):
-        if "rollout_len" not in self.params:
-            warnings.warn("Did not pass in 'rollout_len' into params, defaulting to 1000")
-            self.params["rollout_len"] = 1000
-        if "max_ep_per_iter" not in self.params:
-            warnings.warn("Did not pass in 'max_ep_per_iter' into params, defaulting to 1000")
-            self.params["max_ep_per_iter"] = 1000
-        if "max_iter" not in self.params:
-            warnings.warn("Did not pass in 'max_iter' into params, defaulting to 100")
-            self.params["max_iter"] = 100
-        if "gamma" not in self.params:
-            warnings.warn("Did not pass in 'gamma' into params, defaulting to 1.")
-            self.params["gamma"] = 1
 
     def collect_rollouts(self):
         """ Collect samples for policy evaluation """
@@ -134,8 +117,8 @@ class FOPO(RLAlg):
             self.n_step += 1
 
             if done:
-                self.n_ep += 1
-                if self.n_ep == self.max_ep or self.n_step == self.max_step:
+                self.n_episodes += 1
+                if self.n_episodes == self.max_episodes or self.n_step == self.max_steps:
                     return 
                 s, _ = self.env.reset()
                 num_resets += 1
@@ -168,10 +151,9 @@ class FOPO(RLAlg):
 
         The step sizes $(beta_t, lam_t)$ are from PDA; We can set $eta_t = beta_t / lam_t$ in PDA.
         """
-        eta_0 = max(0.01, np.sqrt(1-self.params["gamma"]))
-        base_stepsize = self.params.get("base_stepsize", -1) if self.params.get("base_stepsize", -1) > 0 else eta_0
-        if self.params.get("stepsize", "constant") == "constant":
-            beta_t = 1./np.sqrt(self.params["max_iter"])
+        base_stepsize = self.params["pmd_stepsize_base"] 
+        if self.params["pmd_stepsize_type"] == "constant":
+            beta_t = 1./np.sqrt(self.params["max_iters"])
             lam_t = 1./base_stepsize
         # elif self.params["stepsize"]  == "adapt_constant":
         #     # TODO: Incorporate regularization
@@ -180,7 +162,7 @@ class FOPO(RLAlg):
         #     M_h = self.params.get("M_h",0)
         #     lam_t = 1./np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
         #     beta_t = 1./np.sqrt(self.params["max_iter"])
-        elif self.params["stepsize"] == "decreasing":
+        elif self.params["pmd_stepsize_base"] == "decreasing":
             beta_t = self.t+1
             lam_t = base_stepsize * (self.t+1)**(1.5)
         # elif self.params["stepsize"] == "adapt_decreasing":
@@ -220,8 +202,8 @@ class FOPO(RLAlg):
 
         rwd_arr = self.rollout.get_ep_rwds()
         len_arr = self.rollout.get_ep_lens()
-        rwd_arr_trunc = rwd_arr[self.last_iter_ep: self.n_ep]
-        len_arr_trunc = len_arr[self.last_iter_ep: self.n_ep]
+        rwd_arr_trunc = rwd_arr[self.last_iter_ep: self.n_episodes]
+        len_arr_trunc = len_arr[self.last_iter_ep: self.n_episodes]
         i = min(25, len(rwd_arr))
         moving_avg = np.mean(rwd_arr[-i:])
 
@@ -238,7 +220,7 @@ class FOPO(RLAlg):
         self.msg += f"  {'tot_steps':<{l}}: {self.n_step}\n"
         self.msg += f"  {'tot_ep':<{l}}: {self.n_ep}\n"
 
-        self.last_iter_ep = self.n_ep
+        self.last_iter_ep = self.n_episodes
 
     def dump_log(self):
         self.msg += "-"*30 + "\n"
@@ -249,15 +231,12 @@ class FOPO(RLAlg):
         rwd_arr = self.rollout.get_ep_rwds()
         len_arr = self.rollout.get_ep_lens()
 
-        if len(self.params.get("fname", "")) == 0:
-            warnings.warn("No filename given, not saving")
-            return
         fmt="%1.2f,%i"
         arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
-        with open(self.params["fname"], "wb") as fp:
+        with open(self.params["log_file"], "wb") as fp:
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
-        print(f"Saved episode data to {self.params['fname']}")
+        print(f"Saved episode data to %s" % {self.params['log_file']})
 
 class PMDFiniteStateAction(FOPO):
     def __init__(self, env, params):
@@ -284,20 +263,13 @@ class PMDFiniteStateAction(FOPO):
         """ Samples random action from current policy """
         s_ = vec_to_int(s, self.obs_space)
         assert 0 <= s_ < self.n_states, f"invalid s={s} ({self.n_states} states)"
-        eps = self.params.get("eps_explore", 0)
-        assert 0 <= eps <= 1
 
-        pi = (1.-eps)*self.policy[s_] + eps/self.n_actions
+        pi = self.policy[s_] 
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """
-        if self.params.get("train_method", "mc") == "mc":
-            self.monte_carlo_Q()
-        elif self.params["train_method"] == "ctd":
-            self.ctd_Q()
-        elif self.params["train_method"] == "vrftd":
-            self.vrftd_Q()
+        self.monte_carlo_Q()
 
     def monte_carlo_Q(self):
         """ 
@@ -372,7 +344,6 @@ class PMDFiniteStateAction(FOPO):
 class PMDGeneralStateFiniteAction(FOPO):
     def __init__(self, env, params):
         super().__init__(env, params)
-        self.check_PMDGeneralStateFiniteAction_params()
         self.action_space = env.action_space
         self.obs_space = env.observation_space
         (action_is_finite, action_dim, _) = get_space_property(self.action_space)
@@ -381,10 +352,6 @@ class PMDGeneralStateFiniteAction(FOPO):
         assert action_is_finite, "Action space not finite"
 
         self.n_actions = get_space_cardinality(self.action_space)
-        # if "dim" not in params:
-        #     warnings.warn("Did not pass 'dim' into params, setting dim=100")
-        # TODO: Use this for function approximation
-        # dim = params.get("dim", 100)
         if isinstance(obs_dim, tuple):
             assert len(obs_dim) == 1, "Can only handle 1D observation space"
             self.obs_dim = obs_dim[0]
@@ -404,7 +371,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.env_warmup()
         (_, _, s_visited, _) = self.rollout.get_est_stateaction_value()
         X = s_visited
-        if self.params["fa_type"] == "linear":
+        if self.params["pmd_fa_type"] == "linear":
             print("Using linear function approximation with RKHS")
             self.fa_Q = LinearFunctionApproximator(self.n_actions, X, params)
             self.last_thetas = np.zeros((self.n_actions, self.fa_Q.dim), dtype=float)
@@ -447,18 +414,13 @@ class PMDGeneralStateFiniteAction(FOPO):
         self._pp_ct = 0
         self.record_policy_change()
 
-    def check_PMDGeneralStateFiniteAction_params(self):
-        if "fa_type" not in self.params:
-            warnings.warn("No fa_type found in params, defaulting to linear")
-            self.params["fa_type"] = "linear"
-
     def _get_logpolicy(self, s):
         if not self.updated_at_least_once:
             return np.zeros(self.n_actions, dtype=float)
 
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
         for i in range(self.n_actions):
-            if self.params["fa_type"] == "linear":
+            if self.params["pmd_fa_type"] == "linear":
                 self.fa_Q.set_coef(self.theta_accum[i], i)
                 self.fa_Q.set_intercept(self.intercept_accum[i], i)
                 log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s), i)
@@ -485,22 +447,7 @@ class PMDGeneralStateFiniteAction(FOPO):
 
     def policy_sample(self, s):
         """ Samples random action from current policy """
-        eps = self.params.get("eps_explore", 0)
-        assert 0 <= eps <= 1
-
-        if self.params.get("entropy", "kl").lower() == "kl":
-            pi = self._get_policy(self.normalize_obs(s))
-        elif self.params["entropy"].lower() == "tsallis":
-            assert self.params.get("stepsize", "constant") == "decreasing"
-            g = self._get_weighted_logpolicy(self.normalize_obs(s))
-            prev_lam = None
-            if hasattr(self, "prev_lam"):
-                prev_lam = self.prev_lam
-            pi, lam = tsallis_policy_update(None, g, 1., prev_lam)
-            self.prev_lam = lam
-        else:
-            raise Exception(f"Unknown entropy {self.params['entropy']}")
-            
+        pi = self._get_policy(self.normalize_obs(s))
         return self.rng.choice(self.n_actions, p=pi)
 
     def policy_evaluate(self):
@@ -509,12 +456,8 @@ class PMDGeneralStateFiniteAction(FOPO):
         # self.action_runstat.update()
         # self.rwd_runstat.update()
 
-        if self.params.get("train_method", "mc") == "mc":
-            self.monte_carlo_Q()
-        elif self.params["train_method"] == "ctd":
-            self.ctd_Q()
-        elif self.params["train_method"] == "vrftd":
-            self.vrftd_Q()
+        self.monte_carlo_Q()
+        # TODO: Import rollout
 
     def monte_carlo_Q(self):
         """ 
@@ -531,8 +474,8 @@ class PMDGeneralStateFiniteAction(FOPO):
         )
 
         X = np.array([self.normalize_obs(s) for s in s_visited])
-        y = adv_est if self.params.get("use_advantage",False) else q_est
-        if self.params.get("normalize_sa_val", None):
+        y = adv_est if self.params["pmd_use_adv"] else q_est
+        if self.params['pmd_normalize_sa_val']:
             y = (y-np.mean(y))/(np.std(y) + 1e-8)
         self.last_max_q_est = np.max(np.abs(q_est))
         self.last_max_adv_est = np.max(np.abs(adv_est))
@@ -549,7 +492,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 continue
             self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
             self._last_y_a[i] = np.copy(y[action_i_idx])
-            if self.params["fa_type"] == "linear":
+            if self.params['pmd_fa_type'] == "linear":
                 train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i)
                 pred = self.fa_Q.predict(X[action_i_idx], i)
                 sto_Q_arr.append(np.mean(np.square(pred)))
@@ -559,7 +502,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 loss += train_loss 
             else:
                 loss += train_loss[0]
-            if self.params["fa_type"] == "linear":
+            if self.params['pmd_fa_type'] == "linear":
                 self.last_thetas[i] = self.fa_Q.get_coef(i)
                 self.last_intercepts[i] = self.fa_Q.get_intercept(i)
         if len(not_visited_actions) > 0:
@@ -582,9 +525,9 @@ class PMDGeneralStateFiniteAction(FOPO):
 
     def exp_policy_update(self):
         self.updated_at_least_once = True
-        if self.params["fa_type"] == "linear":
+        if self.params['pmd_fa_type'] == "linear":
             self.exp_policy_update_linear()
-        elif self.params["fa_type"] == "nn":
+        elif self.params['pmd_fa_type'] == "nn":
             self.exp_policy_update_nn()
         else:
             raise Exception(f"Unknown function approximation {self.params['fa_type']}")
@@ -605,11 +548,11 @@ class PMDGeneralStateFiniteAction(FOPO):
         $$
         """
         (beta_t, lam_t) = self.get_stepsize_schedule()
-        mu_h = self.params.get("mu_h", 0)
+        mu_h = self.params.get['pmd_mu_h']
         self.last_theta_accum = np.copy(self.theta_accum)
         self.last_intercept_accum = np.copy(self.intercept_accum)
 
-        if self.params.get("stepsize", "constant") == "constant":
+        if self.params['pmd_stepsize_type'] == "constant":
             # corresponds to PMD
             eta_t = beta_t/lam_t # see self.get_stepsize_schedule
             alpha_t = 1+eta_t*mu_h
@@ -629,8 +572,8 @@ class PMDGeneralStateFiniteAction(FOPO):
     def exp_policy_update_nn(self):
         """ Policy update with PMD and KL divergence """
         (beta_t, lam_t) = self.get_stepsize_schedule()
-        mu_h = self.params.get("mu_h", 0)
-        assert self.params.get("stepsize", "constant") == "decreasing", "NN only allows decreasing step size"
+        mu_h = self.params["pmd_mu_h"]
+        assert self.params["pmd_stepsize_type"] == "decreasing", "NN only allows decreasing step size"
         # corresponds to PDA
         # curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
         # prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
@@ -687,7 +630,7 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         [self.normalize_obs(s) for s in s_visited]
-        y = adv_est if self.params.get("use_advantage",False) else q_est
+        y = adv_est if self.params["pmd_use_adv"] else q_est
         [self.normalize_rwd(y_i) for y_i in y]
         # if self.params.get("normalize_sa_val", None):
         #     y = (y-np.mean(y))/(np.std(y) + 1e-8)
@@ -704,20 +647,14 @@ class PMDGeneralStateFiniteAction(FOPO):
 
     def normalize_obs(self, s):
         self.obs_runstat.push(s)
-        if self.params.get("normalize_obs", False):
+        if self.params["pmd_normalize_obs"]:
             return np.divide(s-self.obs_runstat.mean, np.sqrt(self.obs_runstat.var))
         return s
-
-    def normalize_action(self, a):
-        self.action_runstat.push(a)
-        if self.params.get("normalize_action", False):
-            return np.divide(a-self.action_runstat.mean, np.sqrt(self.action_runstat.var))
-        return a
 
     def normalize_rwd(self, r):
         """ Only scale reward, do not re-center """
         self.rwd_runstat.push(r)
-        if self.params.get("normalize_rwd", False):
+        if self.params["pmd_normalize_rwd"]:
             return np.divide(r, np.sqrt(self.rwd_runstat.var) + abs(self.rwd_runstat.mean))
             # return np.divide(r-self.rwd_runstat.mean, np.sqrt(self.rwd_runstat.var**0.5))
         return r
@@ -727,7 +664,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             return np.zeros(self.n_actions)
         q_s = []
         for i in range(self.n_actions):
-            if self.params["fa_type"] == "linear":
+            if self.params["pmd_fa_type"] == "linear":
                 self.fa_Q.set_coef(self.last_thetas[i], i)
                 self.fa_Q.set_intercept(self.last_intercepts[i], i)
             q_s.append(self.fa_Q.predict(np.atleast_2d(s), i))
@@ -811,5 +748,3 @@ class PMDGeneralStateFiniteAction(FOPO):
                 fp.write(f"{tuple(self._policy_prog[i,1+n+2*n_a:1+n+3*n_a])}\n")
 
         print(f"Saved policy progress data to {fname}")
-
-# class PMDGeneralStateAction(PMD):

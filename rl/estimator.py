@@ -87,29 +87,22 @@ class LinearFunctionApproximator(FunctionApproximator):
 
     See: https://github.com/dennybritz/reinforcement-learning/blob/master/FA/Q-Learning%20with%20Value%20Function%20Approximation%20Solution.ipynb
     """
-    def __init__(
-            self, 
-            num_models: int, 
-            X: np.ndarray, 
-            params,
-        ):
+    def __init__(self, X: np.ndarray, params):
         """
         :param X: initial set of states of fit the model
         """
         super().__init__()
         assert num_models > 0
 
-        # self.normalize = params.get("normalize_obs", False)
-        self.alpha = params.get("sgd_alpha", 1e-4)
-        self.feature_type = params.get("feature_type", "rbf")
-        self._deg = params.get("deg", 1)
+        self.alpha = params["pmd_sgd_alpha"]
+        # self.feature_type = params.get("feature_type", "rbf")
+        # self._deg = params.get("deg", 1)
 
         # if self.normalize:
         #     self.scaler = sklearn.preprocessing.StandardScaler()
         #     self.scaler.fit(X)
 
-
-        if self.feature_type == "poly":
+        # if self.feature_type == "poly":
             # TODO: Allow custom features and more customizability
             # self.featurizer = sklearn.pipeline.FeatureUnion([
                 # ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
@@ -117,62 +110,48 @@ class LinearFunctionApproximator(FunctionApproximator):
             #     ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
                 # ("rbf4", RBFSampler(gamma=0.5, n_components=100))
             # ])
-            self.featurizer = PolynomialFeatures(self._deg)
-        elif self.feature_type == "rbf":
-            self.featurizer = sklearn.pipeline.FeatureUnion([
-                # ("rbf1", RBFSampler(gamma=20, n_components=100)),
-                # ("rbf2", RBFSampler(gamma=10, n_components=100)),
-                ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
-                # ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
-                ("rbf5", RBFSampler(gamma=1.0, n_components=100)),
-                # ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
-                # ("rbf7", RBFSampler(gamma=0.1, n_components=100)),
-                # ("rbf8", RBFSampler(gamma=0.05, n_components=100)),
-            ])
-        else:
-            print(f"Unknown feature type {self.feature_type}")
-            raise RuntimeError
+            # self.featurizer = PolynomialFeatures(self._deg)
+        # elif self.feature_type == "rbf":
+        self.featurizer = sklearn.pipeline.FeatureUnion([
+            # ("rbf1", RBFSampler(gamma=20, n_components=100)),
+            # ("rbf2", RBFSampler(gamma=10, n_components=100)),
+            ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
+            # ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
+            ("rbf5", RBFSampler(gamma=1.0, n_components=100)),
+            # ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
+            # ("rbf7", RBFSampler(gamma=0.1, n_components=100)),
+            # ("rbf8", RBFSampler(gamma=0.05, n_components=100)),
+        ])
+        # else:
+        #     print(f"Unknown feature type {self.feature_type}")
+        #     raise RuntimeError
 
         self.featurizer.fit(X)
 
-        self.models = []
-        for _ in range(num_models):
-            model = SGDRegressor(
-                learning_rate=params.get("sgd_stepsize", "constant"),
-                eta0=params.get("sgd_base_stepsize", 0.01),
-                max_iter=params.get("sgd_n_iter", 11),
-                alpha=params.get("sgd_alpha",1e-4),
-                warm_start=params.get("sgd_warmstart", False),
-                tol=0.0,
-                n_iter_no_change=params.get("sgd_n_iter", 1000),
-                fit_intercept=False,
-            )
+        model = SGDRegressor(
+            learning_rate=params["pmd_pe_stepsize_type"],
+            eta0=params["pmd_pe_stepsize_base"],
+            max_iter=params["pmd_pe_max_epochs"],
+            alpha=params["pmd_pe_alpha"],
+            warm_start=True, 
+            tol=0.0,
+            n_iter_no_change=params["pe_sgd_max_epochs"],
+            fit_intercept=True,
+        )
 
-            # model = Lasso(
-            #     alpha=0.0001,
-            #     precompute=True,
-            #     max_iter=params["sgd_n_iter"],
-            #     positive=True, 
-            #     random_state=9999, 
-            #     selection='random'
-            # )
-
-            model.partial_fit(self.featurize([X[0]]), [0])
-            self.models.append(model)
+        model.partial_fit(self.featurize([X[0]]), [0])
+        self.models.append(model)
     
     def featurize(self, X):
-        # if self.normalize:
-        #     X = self.scaler.transform(X)
         return self.featurizer.transform(X)
     
-    def predict(self, x, i=0):
-        assert 0 <= i < len(self.models)
-
+    def predict(self, x, i=None):
         features = self.featurize(x)
         # return self.models[i].predict(features)[0]
-        return np.squeeze(self.models[i].predict(features))
+        output = np.squeeze(self.model.predict(features))
+        return output
     
-    def update(self, X, y, i=0, use_custom_sgd=False):
+    def update(self, X, y, use_custom_sgd=False):
         """
         Updates the estimator parameters for a given state and action towards
         the target y.
@@ -180,42 +159,37 @@ class LinearFunctionApproximator(FunctionApproximator):
         :return train_loss: over each epoch
         :return val_loss: over each epoch
         """
-        assert 0 <= i < len(self.models)
-
         features = self.featurize(X)
         if use_custom_sgd:
-            return custom_SGD(self.models[i], features, y)
+            return custom_SGD(self.model, features, y)
 
-        self.models[i].fit(features, y)
+        self.model.fit(features, y)
 
-        pred = self.predict(X, i)
+        pred = self.predict(X)
         loss = la.norm(pred-y, ord=2)**2/len(y)
         return loss, 0
 
-    def set_coef(self, coef, i):
-         assert 0 <= i < len(self.models)
-         self.models[i].coef_ = np.copy(coef)
+    def set_coef(self, coef):
+         self.model.coef_ = np.copy(coef)
 
-    def set_intercept(self, intercept, i):
-         assert 0 <= i < len(self.models)
-         self.models[i].intercept_ = np.copy(intercept)
+    def set_intercept(self, intercept):
+         self.model.intercept_ = np.copy(intercept)
 
-    def get_coef(self, i):
-         assert 0 <= i < len(self.models)
-         return np.copy(self.models[i].coef_)
+    def get_coef(self):
+         return np.copy(self.model.coef_)
 
-    def get_intercept(self, i):
-         assert 0 <= i < len(self.models)
-         return np.copy(self.models[i].intercept_)
+    def get_intercept(self):
+         return np.copy(self.model.intercept_)
 
     @property
     def dim(self):
-        if self.feature_type == "poly":
-            return self.featurizer.n_output_features_
-        elif self.feature_type == "rbf":
-            return 100*len(self.featurizer.transformer_list) # self.featurizer.n_components 
-        else:
-            raise RuntimeError
+        # if self.feature_type == "poly":
+        #     return self.featurizer.n_output_features_
+        # elif self.feature_type == "rbf":
+        #     return 100*len(self.featurizer.transformer_list) # self.featurizer.n_components 
+        # else:
+        #     raise RuntimeError
+        return 100*len(self.featurizer.transformer_list) # self.featurizer.n_components 
 
     def save_model(self):
         raise NotImplemented
@@ -227,11 +201,11 @@ class NeuralNetwork(nn.Module):
         # n_hidden_layers = 2
         # layer_width = 128
         n_hidden_layers = 2
-        layer_width = 16
-        if params.get("network_type", "small") == "deep":
-            n_hidden_layers = 8
-        elif params.get("network_type", "small") == "shallow":
-            layer_depth = 512
+        layer_width = 64
+        if params["pmd_nn_type"] == "deep":
+            n_hidden_layers = 4
+        elif params["pmd_nn_type"] == "shallow":
+            layer_depth = 128
 
         modules = nn.ModuleList([nn.Linear(input_dim, layer_width, bias=False)])
         modules.extend([nn.Tanh()])
@@ -253,9 +227,11 @@ class NeuralNetwork(nn.Module):
                 # stdv = 1. / np.sqrt(m.weight.size(1))
                 # torch.nn.init.normal_(m.bias, std=stdv, generator=g_cpu)
                 # torch.nn.init.xavier_uniform_(m.weight, generator=g_cpu)
-                torch.nn.init.zeros_(m.weight)
+                # torch.nn.init.zeros_(m.weight)
+                # TODO: How to choose gain
+                torch.nn.init.orthogonal_(m.weight, gain=1.0)
                 # torch.nn.init.zeros_(m.bias)
-        # self.linears.apply(init_weights)
+        self.linears.apply(init_weights)
 
     def forward(self, x):
         # if len(x.shape) > 1:
@@ -277,55 +253,45 @@ class NNFunctionApproximator(FunctionApproximator):
             else "cpu"
         )
 
-        self.models = []
-        self.optimizers = []
         self.loss_fn = nn.MSELoss()
-        import time
-        t_0 = int(time.time())
-        for _ in range(num_models):
-            model = NeuralNetwork(input_dim, output_dim, params, seed=t_0).to(self.device)
-            pe_update = params.get("pe_update", "sgd")
-            lr = params.get("sgd_base_stepsize", 0.001)
-            weight_decay = params.get("sgd_alpha", 1e-3)
+        self.model = NeuralNetwork(input_dim, output_dim, params, seed=params["seed"]).to(self.device)
+        pe_update = params["pmd_nn_update"]
+        lr = params["pmd_pe_stepsize_base"]
+        weight_decay = params["pmd_pe_alpha"]
 
-            if pe_update in ["sgd", "sgd_mom"]:
-                dampening = momentum = 0 
-                if params.get("pe_update", "sgd") == "sgd_mom":
-                    dampening = 0 # 0.1
-                    momentum = 0.9
-                optimizer = torch.optim.SGD(
-                    model.parameters(), 
-                    momentum=momentum,
-                    dampening=dampening,
-                    lr=lr,
-                    weight_decay=weight_decay,
-                )
-            else:
-                optimizer = torch.optim.Adam(
-                    model.parameters(),
-                    lr=lr,
-                    weight_decay=weight_decay,
-                    eps=1e-8,
-                )
+        if pe_update in ["sgd", "sgd_mom"]:
+            dampening = momentum = 0 
+            if params.get("pe_update", "sgd") == "sgd_mom":
+                dampening = 0 # 0.1
+                momentum = 0.9
+            self.optimizer = torch.optim.SGD(
+                model.parameters(), 
+                momentum=momentum,
+                dampening=dampening,
+                lr=lr,
+                weight_decay=weight_decay,
+            )
+        else:
+            self.optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay,
+                eps=1e-8,
+            )
 
-            self.models.append(model)
-            self.optimizers.append(optimizer)
+        self.max_grad_norm = params["pmd_max_grad_norm"] if params["pmd_max_grad_norm"] > 0 else np.inf
+        self.max_epochs = params["pmd_pe_max_epochs"]
+        self.batch_size = params["pmd_batch_size"]
 
-        self.max_grad_norm = params.get("max_grad_norm", np.inf)
-        if self.max_grad_norm <= 0:
-            self.max_grad_norm = np.inf
-        self.sgd_n_iter = params.get("sgd_n_iter", 11)
-        self.batch_size = params.get("batch_size", 32)
-
-    def predict(self, X, i=0):
+    def predict(self, X):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
-        self.models[i].eval()
+        self.model.eval()
 
         y = []
         with torch.no_grad():
             for j,X_j in enumerate(X):
                 X_j = torch.from_numpy(X_j).to(self.device).float()
-                y_pred = self.models[i](X_j)
+                y_pred = self.model(X_j)
                 # https://stackoverflow.com/questions/55466298/pytorch-cant-call-numpy-on-variable-that-requires-grad-use-var-detach-num
                 # y.append(y_pred.numpy())
                 y.append(y_pred.detach().numpy())
@@ -333,52 +299,78 @@ class NNFunctionApproximator(FunctionApproximator):
         # TODO: Detect if we ever want multi-dimensional...
         return np.squeeze(np.array(y))
 
-    def update(self, X, y, i=0, batch_size=-1, sgd_n_iter=-1, validation_frac=0.1, skip_losses=False):
+    def update(self, X, y, i_s=None, validation_frac=0.1, skip_losses=False):
+        """ Updates neural network
+
+        :param X: 
+        :param y:
+        :param a_s: indices for which y corresponds to (if None
+        :param validation_frac: validation fraction for testing
+        :param skip_losses: skip computation of training loss
+        """
         try:
             X = np.array(X)
             y = np.array(y)
         except Exception:
             raise RuntimeError("Inputs X,y are not list or numpy arrays")
-        if len(X) != len(y):
+        if not(len(X) == len(y) and i_s is None):
             raise RuntimeError("len(X) does not match len(y)")
-        if batch_size < 1:
-            batch_size = self.batch_size
+        if not(len(X) == len(y) == len(i_s)):
+            raise RuntimeError("len(X) != len(y) or len(X) != len(i_s)")
+        assert self.output_dim == 1 or a_s is not None, "Since output_dim > 1, must pass in indicies"
+        assert 0 <= np.min(a_s) and np.max(a_s)+1 <= self.output_dim, "Invalid indices in i_s"
+        if self.output_dim == 1:
+            a_s = np.zeros(len(y))
+        Y = np.zeros((len(y), self.output_dim), dtype=y.dtype)
+        for i,a in enumerate(a_s):
+            Y[i,a] = y[i]
 
         # TODO: Make these customizable
-        dataset = list(zip(X,y))
+        dataset = list(zip(X,Y))
         val_idx= int(len(dataset)*(1.-validation_frac))
 
         train_losses = []
         test_losses = []
-        batch_size = min(len(X), batch_size)
-        sgd_n_iter = sgd_n_iter if sgd_n_iter > 0 else self.sgd_n_iter
+        batch_size = min(len(X), self.batch_size)
+        sgd_n_iter = self.sgd_n_iter if sgd_n_iter > 0 else self.max_epochs
 
-        for _ in range(sgd_n_iter):
+        # prepend extra column to store which indices we want to use
+        for _ in range(self.max_epochs):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
-            X_train, y_train = list(zip(*dataset[:val_idx]))
-            train_set = list(zip(X_train, y_train))
+            X_train, Y_train = list(zip(*dataset[:val_idx]))
+            train_set = list(zip(X_train, Y_train))
 
-            train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
-            self._train_one_epoch(train_loader, i=i)
+            train_loader = torch.utils.data.DataLoader(
+                train_set, 
+                batch_size=self.batch_size, 
+                shuffle=True
+            )
+            self._train_one_epoch(train_loader)
 
             if skip_losses: 
                 continue
 
-            y_train_pred = self.predict(X_train, i)
-            train_losses.append(la.norm(y_train-y_train_pred)**2/len(y_train))
+            Y_train_pred = self.predict(X_train)
+            nonzero_idxs = np.nonzero(Y_train_pred)[0]
+            if len(nonzero_idxs) == 0:
+                continue
+            nonzero_idx = nonzero_idxs[0]
+            train_losses.append((Y_train-Y_train_pred)[nonzero_idx]**2)
+            """
             if val_idx < len(dataset):
                 X_test, y_test = list(zip(*dataset[val_idx:]))
                 y_test_pred = self.predict(X_test, i)
                 test_losses.append(la.norm(y_test-y_test_pred)**2/len(y_test))
+            """
 
         return np.array(train_losses), np.array(test_losses)
 
-    def _train_one_epoch(self, train_loader, i):
+    def _train_one_epoch(self, train_loader):
         running_loss = 0.
         last_loss = 0.
 
-        self.models[i].train()
+        self.model.train()
         for j, data in enumerate(train_loader):
             X_j, y_j = data
 
@@ -386,7 +378,7 @@ class NNFunctionApproximator(FunctionApproximator):
             X_j = X_j.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
             y_j = y_j.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
 
-            pred_j = self.models[i](torch.atleast_2d(X_j))
+            pred_j = self.model(torch.atleast_2d(X_j))
             # TODO: Is this the right way to do it?
             if len(pred_j.shape) > 1:
                 pred_j = torch.squeeze(pred_j)
@@ -396,17 +388,16 @@ class NNFunctionApproximator(FunctionApproximator):
             loss = (pred_j - y_j).pow(2).mean()
 
             # Zero your gradients for every batch!
-            self.optimizers[i].zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
 
             if self.max_grad_norm < np.inf:
-                nn.utils.clip_grad_norm_(self.models[i].parameters(), self.max_grad_norm)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
-            self.optimizers[i].step()
+            self.optimizers.step()
 
             # Gather data and report
             last_loss = loss.item()
-
 
         # TEMP: Print the weights
         # for name, param in self.models[i].named_parameters():
