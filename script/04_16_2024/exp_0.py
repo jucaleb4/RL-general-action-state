@@ -47,12 +47,12 @@ def setup_setting_files(seed, max_steps):
         ('parallel', False),
         ('trials', 1),
         ('max_iters', 100),
-        ('max_episodes', 1_000),
+        ('max_episodes', 10_000),
         ('max_steps', max_steps),
         ('gamma', 0.99),
         ('pmd_rollout_len', 2048),
         ('pmd_fa_type', "nn"),
-        # ('pmd_stepsize_type', ...), # alg determines step size 
+        ('pmd_stepsize_type', 'pmd'),
         ('pmd_stepsize_base', 0.01),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
@@ -83,7 +83,36 @@ def setup_setting_files(seed, max_steps):
 
     # PMD continuous state finite action (rkhs)
     od['alg'] = 'pmd'
+    od['env_name'] = 'GridWorld-v0'
+    od['pmd_stepsize_type'] = 'pmd' 
+    od['pmd_fa_type'] = "linear"
+    od['pmd_pe_stepsize_base'] = 0.1
+    od['pmd_pe_alpha'] = 0.0001
+    fname = os.path.join(folder_name, "run_%s.json" % ct)
+    if not(os.path.exists(od["log_folder"])):
+        os.makedirs(od["log_folder"])
+    with open(fname, 'w', encoding='utf-8') as f:
+        json.dump(od, f, ensure_ascii=False, indent=4)
+        ct += 1
+
+    # PMD continuous state finite action (rkhs)
+    od['alg'] = 'pmd'
+    od['env_name'] = 'GridWorld-v0'
+    od['pmd_stepsize_type'] = 'pda_1' 
+    od['pmd_fa_type'] = "nn"
+    od['pmd_pe_stepsize_base'] = 0.1
+    od['pmd_pe_alpha'] = 0.0001
+    fname = os.path.join(folder_name, "run_%s.json" % ct)
+    if not(os.path.exists(od["log_folder"])):
+        os.makedirs(od["log_folder"])
+    with open(fname, 'w', encoding='utf-8') as f:
+        json.dump(od, f, ensure_ascii=False, indent=4)
+        ct += 1
+
+    # PMD continuous state finite action (rkhs)
+    od['alg'] = 'pmd'
     od['env_name'] = 'LunarLander-v2'
+    od['pmd_stepsize_type'] = 'pmd' 
     od['pmd_fa_type'] = "linear"
     od['pmd_pe_stepsize_base'] = 0.01
     od['pmd_pe_alpha'] = 0.0001
@@ -97,6 +126,7 @@ def setup_setting_files(seed, max_steps):
     # PMD continuous state finite action (nn)
     od['alg'] = 'pmd'
     od['env_name'] = 'LunarLander-v2'
+    od['pmd_stepsize_type'] = 'pmd' 
     od['pmd_fa_type'] = "nn"
     od['pmd_pe_stepsize_base'] = 0.001
     od['pmd_pe_alpha'] = 0.0
@@ -108,8 +138,9 @@ def setup_setting_files(seed, max_steps):
         ct += 1
 
     # PDA continuous state finite action (rkhs)
-    od['alg'] = 'pda'
+    od['alg'] = 'pmd'
     od['env_name'] = 'LunarLander-v2'
+    od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "linear"
     od['pmd_pe_stepsize_base'] = 0.01
     od['pmd_pe_alpha'] = 0.0001
@@ -121,8 +152,9 @@ def setup_setting_files(seed, max_steps):
         ct += 1
 
     # PMD continuous state finite action (nn)
-    od['pda'] = 'pda'
+    od['pda'] = 'pmd'
     od['env_name'] = 'LunarLander-v2'
+    od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "nn"
     od['pmd_pe_stepsize_base'] = 0.001
     od['pmd_pe_alpha'] = 0.0
@@ -136,6 +168,7 @@ def setup_setting_files(seed, max_steps):
     # PDA continuous state and action
     od['alg'] = 'pda'
     od['env_name'] = 'Humanoid-v4'
+    od['pmd_stepsize_type'] = 'pda_2' 
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
         os.makedirs(od["log_folder"])

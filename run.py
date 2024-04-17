@@ -20,7 +20,6 @@ import or_gym
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
 from rl import PDAGeneralStateAction
-from rl import QLearn
 
 from rl import utils
 from rl import create_and_validate_settings
@@ -29,32 +28,39 @@ def dictionary_clear_nones(dt):
     """ Returns a copied dictionary and removes keys whose value is None """
     return dict({k: v for k, v in dt.items() if v is not None})
 
-def main(alg, env_name, seed, settings, output={}):
-    if "VMPacking" in env_name:
+def main(params, output={}):
+    env_name = params['env_name']
+    if 'VMPacking' in env_name:
         env = or_gym.make(env_name)
-    elif "LunarLander" in env_name:
+    elif 'LunarLander' in env_name:
         env = gym.make(
             env_name,
             # render_mode="human",
             max_episode_steps=1000, # can change length here!
-            gravity = -4.0 if settings.get("lunar_perturbed", False) else -10.,
-            enable_wind= settings.get("lunar_perturbed", False),
+            # gravity = -4.0 if params.get("lunar_perturbed", False) else -10.,
+            # enable_wind= params.get("lunar_perturbed", False),
         )
     else:
         if "GridWorld" in env_name:
             full_env_name = os.path.join("gym_examples", env_name)
+            env = gym.make(
+                full_env_name,
+                # render_mode="human",
+                max_episode_steps=1000, # can change length here!
+                size=3,
+            )
         else:
             full_env_name = env_name
-        env = gym.make(
-            full_env_name,
-            # render_mode="human",
-            max_episode_steps=1000, # can change length here!
-            size=settings.get("gridworld_size", 10),
-        )
+            env = gym.make(
+                full_env_name,
+                # render_mode="human",
+                max_episode_steps=1000, # can change length here!
+                # size=10,
+            )
 
     # add penalty of 1
-    if settings.get("lunar_perturbed", False):
-        env = gym.wrappers.TransformReward(env, lambda r : r-1)
+    # if params.get("lunar_perturbed", False):
+    #     env = gym.wrappers.TransformReward(env, lambda r : r-1)
 
     # env = gym.wrappers.TimeAwareObservation(env)
     # env = gym.wrappers.NormalizeObservation(env)
@@ -62,33 +68,26 @@ def main(alg, env_name, seed, settings, output={}):
     if isinstance(env.observation_space, gym.spaces.Dict):
         env = gym.wrappers.FlattenObservation(env)
 
-    fname = ""
-    if settings.get("save_logs", False):
-        sname_raw = settings.get("settings_file", "None")
-        if "json" in sname_raw:
-            sname_raw = os.path.splitext(os.path.basename(sname_raw))[0]
-        fname = os.path.join("logs", f"{alg}_{env_name}_settings={sname_raw}_seed={seed}.csv")
-
-    params = settings.copy()
-    params["verbose"] = False
-    params["fname"] = fname
-
     (obs_is_finite, obs_dim, _) = utils.get_space_property(env.observation_space)
     (act_is_finite, act_dim, _) = utils.get_space_property(env.action_space)
     is_enumerable = obs_is_finite and act_is_finite
 
-    assert alg not in ["pmd", "pda"] or params["fa_type"] != "none" or is_enumerable, \
+    assert params['alg'] not in ["pmd", "pda"] or params["pmd_fa_type"] != "none" or is_enumerable, \
            "Must use function approximation if not enumerable"
 
-    if alg == "pmd" and params["fa_type"] == "none":
+    params['log_file'] = os.path.join(params['log_folder'], "seed=%s.csv" % params['seed'])
+
+    alg = params['alg']
+    if alg == "pmd" and params["pmd_fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
     elif alg == "pmd":
-        assert params["fa_type"] != "none" and act_is_finite, \
+        assert params["pmd_fa_type"] != "none" and act_is_finite, \
         "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
     elif alg == "pda":
         alg = PDAGeneralStateAction(env, params)
     elif alg == "qlearn":
+        from rl import QLearn
         alg = QLearn(env, params)
     elif alg == "ppo":
         from rl.ppo import PPO
@@ -96,9 +95,9 @@ def main(alg, env_name, seed, settings, output={}):
     else:
         return 
 
-    output[seed] = alg.learn(settings["max_iter"])
+    output[params['seed']] = alg.learn(params["max_iters"])
 
-def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
+def run_main_multiprocessing(alg, env_name, num_start, num_end, params):
     num_exp = num_end - num_start
     assert num_exp >= 1
     num_proc = mp.cpu_count()
@@ -111,7 +110,7 @@ def run_main_multiprocessing(alg, env_name, num_start, num_end, settings):
                 p.join()
             procs = []
 
-        p = mp.Process(target=main, args=(alg, env_name, i, settings))
+        p = mp.Process(target=main, args=(alg, env_name, i, params))
         p.start()
         procs.append(p)
 
@@ -175,20 +174,20 @@ if __name__ == "__main__":
     """
     args = parser.parse_args()
 
-    if len(args.settings) > 6 and args.settings[-len('.json'):] == '.json':
+    if len(args.settings) > 5 and args.settings[-len('.json'):] == '.json':
         with open(args.settings, "r") as fp:
-            settings = json.load(fp)
+            params = json.load(fp)
 
-        settings, valid_hyperparams  = create_and_validate_settings(settings)
-        if not valid_hyperparams:
-            exit(0)
+        # settings, valid_hyperparams  = create_and_validate_settings(settings)
+        # if not valid_hyperparams:
+        #     exit(0)
     else:
         raise Exception("No valid json file %s passed in" % args.settings)
 
-    imp
+    main(params)
 
-    if settings.parallel:
-        run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
-    else:
+    # if settings.parallel:
+    #     run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
+    # else:
         # no seeding yet
-        main(args.alg, args.env_name, args.seed, settings)
+    #     main(args.alg, args.env_name, args.seed, settings)

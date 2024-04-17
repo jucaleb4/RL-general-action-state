@@ -92,9 +92,8 @@ class LinearFunctionApproximator(FunctionApproximator):
         :param X: initial set of states of fit the model
         """
         super().__init__()
-        assert num_models > 0
 
-        self.alpha = params["pmd_sgd_alpha"]
+        self.alpha = params["pmd_pe_alpha"]
         # self.feature_type = params.get("feature_type", "rbf")
         # self._deg = params.get("deg", 1)
 
@@ -115,7 +114,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         self.featurizer = sklearn.pipeline.FeatureUnion([
             # ("rbf1", RBFSampler(gamma=20, n_components=100)),
             # ("rbf2", RBFSampler(gamma=10, n_components=100)),
-            ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
+            # ("rbf3", RBFSampler(gamma=5.0, n_components=100)),
             # ("rbf4", RBFSampler(gamma=2.0, n_components=100)),
             ("rbf5", RBFSampler(gamma=1.0, n_components=100)),
             # ("rbf6", RBFSampler(gamma=0.5, n_components=100)),
@@ -128,19 +127,18 @@ class LinearFunctionApproximator(FunctionApproximator):
 
         self.featurizer.fit(X)
 
-        model = SGDRegressor(
+        self.model = SGDRegressor(
             learning_rate=params["pmd_pe_stepsize_type"],
             eta0=params["pmd_pe_stepsize_base"],
             max_iter=params["pmd_pe_max_epochs"],
             alpha=params["pmd_pe_alpha"],
             warm_start=True, 
             tol=0.0,
-            n_iter_no_change=params["pe_sgd_max_epochs"],
+            n_iter_no_change=params["pmd_pe_max_epochs"],
             fit_intercept=True,
         )
 
-        model.partial_fit(self.featurize([X[0]]), [0])
-        self.models.append(model)
+        self.model.partial_fit(self.featurize([X[0]]), [0])
     
     def featurize(self, X):
         return self.featurizer.transform(X)
@@ -240,9 +238,8 @@ class NeuralNetwork(nn.Module):
         return logits
 
 class NNFunctionApproximator(FunctionApproximator):
-    def __init__(self, num_models, input_dim, output_dim, params):
+    def __init__(self, input_dim, output_dim, params):
         super().__init__()
-        assert num_models > 0
 
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -265,7 +262,7 @@ class NNFunctionApproximator(FunctionApproximator):
                 dampening = 0 # 0.1
                 momentum = 0.9
             self.optimizer = torch.optim.SGD(
-                model.parameters(), 
+                self.model.parameters(), 
                 momentum=momentum,
                 dampening=dampening,
                 lr=lr,
@@ -273,7 +270,7 @@ class NNFunctionApproximator(FunctionApproximator):
             )
         else:
             self.optimizer = torch.optim.Adam(
-                model.parameters(),
+                self.model.parameters(),
                 lr=lr,
                 weight_decay=weight_decay,
                 eps=1e-8,
@@ -287,19 +284,20 @@ class NNFunctionApproximator(FunctionApproximator):
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
         self.model.eval()
 
-        y = []
+        Y = []
         with torch.no_grad():
             for j,X_j in enumerate(X):
                 X_j = torch.from_numpy(X_j).to(self.device).float()
                 y_pred = self.model(X_j)
                 # https://stackoverflow.com/questions/55466298/pytorch-cant-call-numpy-on-variable-that-requires-grad-use-var-detach-num
                 # y.append(y_pred.numpy())
-                y.append(y_pred.detach().numpy())
+                Y.append(y_pred.detach().numpy())
 
         # TODO: Detect if we ever want multi-dimensional...
-        return np.squeeze(np.array(y))
+        # return np.squeeze(np.array(Y))
+        return np.array(Y)
 
-    def update(self, X, y, i_s=None, validation_frac=0.1, skip_losses=False):
+    def update(self, X, y, i_a, validation_frac=0.1, skip_losses=False):
         """ Updates neural network
 
         :param X: 
@@ -313,50 +311,39 @@ class NNFunctionApproximator(FunctionApproximator):
             y = np.array(y)
         except Exception:
             raise RuntimeError("Inputs X,y are not list or numpy arrays")
-        if not(len(X) == len(y) and i_s is None):
+        if not(len(X) == len(y)):
             raise RuntimeError("len(X) does not match len(y)")
-        if not(len(X) == len(y) == len(i_s)):
-            raise RuntimeError("len(X) != len(y) or len(X) != len(i_s)")
-        assert self.output_dim == 1 or a_s is not None, "Since output_dim > 1, must pass in indicies"
-        assert 0 <= np.min(a_s) and np.max(a_s)+1 <= self.output_dim, "Invalid indices in i_s"
+        assert 0 <= i_a < self.output_dim, "Invalid index i_a=%s" % i_a
         if self.output_dim == 1:
-            a_s = np.zeros(len(y))
-        Y = np.zeros((len(y), self.output_dim), dtype=y.dtype)
-        for i,a in enumerate(a_s):
-            Y[i,a] = y[i]
+            i_a = 0
 
         # TODO: Make these customizable
-        dataset = list(zip(X,Y))
+        dataset = list(zip(X,y))
         val_idx= int(len(dataset)*(1.-validation_frac))
 
         train_losses = []
         test_losses = []
         batch_size = min(len(X), self.batch_size)
-        sgd_n_iter = self.sgd_n_iter if sgd_n_iter > 0 else self.max_epochs
 
         # prepend extra column to store which indices we want to use
         for _ in range(self.max_epochs):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
-            X_train, Y_train = list(zip(*dataset[:val_idx]))
-            train_set = list(zip(X_train, Y_train))
+            X_train, y_train = list(zip(*dataset[:val_idx]))
+            train_set = list(zip(X_train, y_train))
 
             train_loader = torch.utils.data.DataLoader(
                 train_set, 
-                batch_size=self.batch_size, 
+                batch_size=batch_size, 
                 shuffle=True
             )
-            self._train_one_epoch(train_loader)
+            self._train_one_epoch(train_loader, i_a)
 
             if skip_losses: 
                 continue
 
-            Y_train_pred = self.predict(X_train)
-            nonzero_idxs = np.nonzero(Y_train_pred)[0]
-            if len(nonzero_idxs) == 0:
-                continue
-            nonzero_idx = nonzero_idxs[0]
-            train_losses.append((Y_train-Y_train_pred)[nonzero_idx]**2)
+            y_train_pred = self.predict(X_train)
+            train_losses.append((y_train-y_train_pred[:,i_a])**2)
             """
             if val_idx < len(dataset):
                 X_test, y_test = list(zip(*dataset[val_idx:]))
@@ -366,7 +353,7 @@ class NNFunctionApproximator(FunctionApproximator):
 
         return np.array(train_losses), np.array(test_losses)
 
-    def _train_one_epoch(self, train_loader):
+    def _train_one_epoch(self, train_loader, i_a):
         running_loss = 0.
         last_loss = 0.
 
@@ -385,7 +372,7 @@ class NNFunctionApproximator(FunctionApproximator):
             if len(pred_j.shape) == 0:
                 continue
             # loss = self.loss_fn(pred_j, y_j)
-            loss = (pred_j - y_j).pow(2).mean()
+            loss = (pred_j[:,i_a] - y_j).pow(2).mean()
 
             # Zero your gradients for every batch!
             self.optimizer.zero_grad()
@@ -394,7 +381,7 @@ class NNFunctionApproximator(FunctionApproximator):
             if self.max_grad_norm < np.inf:
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
-            self.optimizers.step()
+            self.optimizer.step()
 
             # Gather data and report
             last_loss = loss.item()

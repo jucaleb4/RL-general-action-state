@@ -21,7 +21,6 @@ from rl.utils import get_space_property
 from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
-from rl.utils import tsallis_policy_update
 
 class FOPO(RLAlg):
     def __init__(self, env, params):
@@ -38,7 +37,7 @@ class FOPO(RLAlg):
         self.n_step = 0
         self.last_iter_ep = 0
         self.max_episodes = params['max_episodes'] if params['max_episodes'] > 0 else np.inf
-        self.max_steps = params['max_steps'] if params'"max_steps'] > 0 else np.inf
+        self.max_steps = params['max_steps'] if params['max_steps'] > 0 else np.inf
         self.emp_Q_max_arr = []
         self.sto_Q_max_arr = []
         self.curr_beta_sum = 0
@@ -90,12 +89,7 @@ class FOPO(RLAlg):
 
         s = self._last_s
 
-        if self.params["max_ep_per_iter"] > 0:
-            max_num_resets = self.params["max_ep_per_iter"]  
-        else:
-            max_num_resets = np.inf
-        num_resets = 0
-        for t in range(self.params["rollout_len"]): 
+        for t in range(self.params["pmd_rollout_len"]): 
             v_s = self.estimate_value(s)
 
             a = self.policy_sample(s)
@@ -106,7 +100,7 @@ class FOPO(RLAlg):
             if trunc:
                 v_next_s = self.estimate_value(next_s)
                 r += self.params["gamma"] * v_next_s
-            if t == self.params["rollout_len"]-1:
+            if t == self.params["pmd_rollout_len"]-1:
                 self._curr_s = next_s
                 self._last_pred_value = self.estimate_value(next_s)
                 self._last_state_done = done
@@ -121,11 +115,6 @@ class FOPO(RLAlg):
                 if self.n_episodes == self.max_episodes or self.n_step == self.max_steps:
                     return 
                 s, _ = self.env.reset()
-                num_resets += 1
-                if num_resets == max_num_resets:
-                    self._last_pred_value = self.estimate_value(next_s)
-                    self._last_state_done = True
-                    break
 
     @abstractmethod
     def policy_evaluate(self):
@@ -151,10 +140,10 @@ class FOPO(RLAlg):
 
         The step sizes $(beta_t, lam_t)$ are from PDA; We can set $eta_t = beta_t / lam_t$ in PDA.
         """
-        base_stepsize = self.params["pmd_stepsize_base"] 
-        if self.params["pmd_stepsize_type"] == "constant":
+        stepsize_base = self.params["pmd_stepsize_base"]
+        if self.params["pmd_stepsize_type"] == "pmd":
             beta_t = 1./np.sqrt(self.params["max_iters"])
-            lam_t = 1./base_stepsize
+            lam_t = 1./stepsize_base
         # elif self.params["stepsize"]  == "adapt_constant":
         #     # TODO: Incorporate regularization
         #     Q_inf = abs(self.emp_Q_max_arr[-1])
@@ -162,9 +151,13 @@ class FOPO(RLAlg):
         #     M_h = self.params.get("M_h",0)
         #     lam_t = 1./np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
         #     beta_t = 1./np.sqrt(self.params["max_iter"])
-        elif self.params["pmd_stepsize_base"] == "decreasing":
+        elif self.params["pmd_stepsize_type"] == "pda_1":
             beta_t = self.t+1
-            lam_t = base_stepsize * (self.t+1)**(1.5)
+            lam_t = (self.t+1)**(1.5)/stepsize_base
+        elif self.params["pmd_stepsize_type"] == "pda_2":
+            beta_t = self.t+1
+            k = self.params["max_iters"]
+            lam_t = k * (k+1)/stepsize_base
         # elif self.params["stepsize"] == "adapt_decreasing":
         #     Q_inf = abs(self.emp_Q_max_arr[-1])
         #     tQ_inf_sq = self.stoch_Q_second_moment()
@@ -172,7 +165,7 @@ class FOPO(RLAlg):
         #     lam_t = np.sqrt(2*np.log(self.n_actions)/(Q_inf**2 + tQ_inf_sq))
         #     beta_t = t+1
         else:
-            raise Exception("Unknown stepsize rule {self.params['stepsize']}")
+            raise Exception("Unknown stepsize rule %s" % self.params['pmd_stepsize_type'])
 
         return (beta_t, lam_t)
 
@@ -211,14 +204,14 @@ class FOPO(RLAlg):
         self.msg += "rollout/\n"
         self.msg += f"  {'itr_ep_len_mean':<{l}}: {np.mean(len_arr_trunc):.2f}\n"
         self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
-        self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_ep-self.last_iter_ep)}\n"
+        self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_episodes-self.last_iter_ep)}\n"
         self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
 
         self.msg += "time/\n"
         self.msg += f"  {'itr':<{l}}: {self.t}\n"
         self.msg += f"  {'time_elap':<{l}}: {time.time()-self.s_time:.2f}\n"
         self.msg += f"  {'tot_steps':<{l}}: {self.n_step}\n"
-        self.msg += f"  {'tot_ep':<{l}}: {self.n_ep}\n"
+        self.msg += f"  {'tot_ep':<{l}}: {self.n_episodes}\n"
 
         self.last_iter_ep = self.n_episodes
 
@@ -236,7 +229,7 @@ class FOPO(RLAlg):
         with open(self.params["log_file"], "wb") as fp:
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
-        print(f"Saved episode data to %s" % {self.params['log_file']})
+        print("Saved episode data to %s" % self.params['log_file'])
 
 class PMDFiniteStateAction(FOPO):
     def __init__(self, env, params):
@@ -297,12 +290,7 @@ class PMDFiniteStateAction(FOPO):
         raise NotImplemented
 
     def policy_update(self): 
-        if self.params.get("entropy", "kl").lower() == "kl":
-            self.exp_policy_update()
-        elif self.params["entropy"].lower() == "tsallis":
-            self.tsallis_policy_update()
-        else:
-            self.exp_policy_update()
+        self.exp_policy_update()
 
     def exp_policy_update(self):
         """ Policy update with PMD and KL divergence """
@@ -325,12 +313,6 @@ class PMDFiniteStateAction(FOPO):
         upper_vals = np.maximum(np.max(G, axis=1), 1./(1-self.params["gamma"]))
         upper_vals = np.repeat(np.expand_dims(upper_vals, axis=1), self.n_actions, axis=1)
         np.put(G, below_threshold_idxs, uppder_vals)
-
-    def tsallis_policy_update(self):
-        """ Policy update with PMD and Tsallis divergence (with p=1/2) """
-        policy_threshold = (1-self.params["gamma"])**2 * self.n_actions**(-1)
-        warnings.warn("Tsallis entropy not yet implemented, not policy update")
-        pass
 
     def policy_performance(self) -> float: 
         """ Estimate value function """
@@ -373,7 +355,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         X = s_visited
         if self.params["pmd_fa_type"] == "linear":
             print("Using linear function approximation with RKHS")
-            self.fa_Q = LinearFunctionApproximator(self.n_actions, X, params)
+            self.fa_Q = LinearFunctionApproximator(X, params)
             self.last_thetas = np.zeros((self.n_actions, self.fa_Q.dim), dtype=float)
             self.last_intercepts = np.zeros((self.n_actions, 1), dtype=float)
             self.theta_accum = np.copy(self.last_thetas)
@@ -382,10 +364,16 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.last_intercept_accum = np.copy(self.intercept_accum)
         else:
             print("Using neural network with tanh activation")
-            self.fa_Q = NNFunctionApproximator(self.n_actions, 
-                input_dim=self.obs_dim, output_dim=1, params=params)
-            self.fa_Q_accum = NNFunctionApproximator(self.n_actions, 
-                input_dim=self.obs_dim, output_dim=1, params=params)
+            self.fa_Q = NNFunctionApproximator(
+                input_dim=self.obs_dim, 
+                output_dim=self.n_actions, 
+                params=params
+            )
+            self.fa_Q_accum = NNFunctionApproximator(
+                input_dim=self.obs_dim, 
+                output_dim=self.n_actions, 
+                params=params
+            )
 
         self.last_max_q_est = ...
         self.last_max_adv_est = ...
@@ -419,17 +407,19 @@ class PMDGeneralStateFiniteAction(FOPO):
             return np.zeros(self.n_actions, dtype=float)
 
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
+        mu_h = self.params["pmd_mu_h"]
         for i in range(self.n_actions):
             if self.params["pmd_fa_type"] == "linear":
-                self.fa_Q.set_coef(self.theta_accum[i], i)
-                self.fa_Q.set_intercept(self.intercept_accum[i], i)
-                log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s), i)
+                self.fa_Q.set_coef(self.theta_accum[i])
+                self.fa_Q.set_intercept(self.intercept_accum[i])
+                log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s))
             else:
                 # Since fa_Q_accum learns:
                 # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t$,
                 # which is the average, we need to scale it for PDA
-                alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
-                log_policy_at_s[i] = alpa * self.fa_Q_accum.predict(np.atleast_2d(s), i)
+                # alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
+                # log_policy_at_s[i] = alpha * self.fa_Q_accum.predict(np.atleast_2d(s))[0,i]
+                log_policy_at_s[i] = np.squeeze(self.fa_Q_accum.predict(np.atleast_2d(s)))[i]
 
         return log_policy_at_s
 
@@ -493,22 +483,31 @@ class PMDGeneralStateFiniteAction(FOPO):
             self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
             self._last_y_a[i] = np.copy(y[action_i_idx])
             if self.params['pmd_fa_type'] == "linear":
-                train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i)
-                pred = self.fa_Q.predict(X[action_i_idx], i)
+                self.fa_Q.set_coef(self.last_thetas[i])
+                self.fa_Q.set_intercept(self.last_intercepts[i])
+                train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx])
+                pred = self.fa_Q.predict(X[action_i_idx])
                 sto_Q_arr.append(np.mean(np.square(pred)))
+                self.last_thetas[i] = self.fa_Q.get_coef()
+                self.last_intercepts[i] = self.fa_Q.get_intercept()
             else:
-                train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx], i, validation_frac=0)
+                train_loss, _ = self.fa_Q.update(
+                    X[action_i_idx], 
+                    y[action_i_idx], 
+                    i,
+                    validation_frac=0
+                )
             if isinstance(train_loss, float) or isinstance(train_loss, int):
                 loss += train_loss 
             else:
-                loss += train_loss[0]
-            if self.params['pmd_fa_type'] == "linear":
-                self.last_thetas[i] = self.fa_Q.get_coef(i)
-                self.last_intercepts[i] = self.fa_Q.get_intercept(i)
+                # TODO: What's going on here
+                loss += train_loss[0,0]
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
 
         self.sto_Q_max_arr.append(np.max(sto_Q_arr))
+        if isinstance(loss, np.ndarray):
+            loss = np.sum(loss)
         self.last_pe_loss = loss/self.n_actions
 
     def ctd_Q(self):
@@ -521,7 +520,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.exp_policy_update()
 
         # TEMP
-        self.record_policy_change()
+        # self.record_policy_change()
 
     def exp_policy_update(self):
         self.updated_at_least_once = True
@@ -548,19 +547,17 @@ class PMDGeneralStateFiniteAction(FOPO):
         $$
         """
         (beta_t, lam_t) = self.get_stepsize_schedule()
-        mu_h = self.params.get['pmd_mu_h']
+        mu_h = self.params['pmd_mu_h']
         self.last_theta_accum = np.copy(self.theta_accum)
         self.last_intercept_accum = np.copy(self.intercept_accum)
 
-        if self.params['pmd_stepsize_type'] == "constant":
-            # corresponds to PMD
+        if self.params['pmd_stepsize_type'] == "pmd":
             eta_t = beta_t/lam_t # see self.get_stepsize_schedule
             alpha_t = 1+eta_t*mu_h
 
             self.theta_accum = 1./alpha_t * (self.theta_accum + eta_t * self.last_thetas)
             self.intercept_accum = 1./alpha_t * (self.intercept_accum + eta_t * self.last_intercepts)
         else:
-            # corresponds to PDA
             curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
             prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
 
@@ -570,19 +567,16 @@ class PMDGeneralStateFiniteAction(FOPO):
                                     + (beta_t/curr_alpha_t) * self.last_intercepts
 
     def exp_policy_update_nn(self):
-        """ Policy update with PMD and KL divergence """
+        """ Policy update with PDA and KL divergence """
         (beta_t, lam_t) = self.get_stepsize_schedule()
         mu_h = self.params["pmd_mu_h"]
-        assert self.params["pmd_stepsize_type"] == "decreasing", "NN only allows decreasing step size"
         # corresponds to PDA
         # curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
         # prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
 
-        # alpha_1 = prev_alpha_t/curr_alpha_t
-        # alpha_2 = beta_t/curr_alpha_t
-
-        alpha_1 = self.prev_beta_sum/self.curr_beta_sum
-        alpha_2 = beta_t/self.curr_beta_sum
+        alpha_1 = self.prev_beta_sum*mu_h+self.prev_lam_t
+        alpha_1 /= (self.curr_beta_sum*mu_h + lam_t)
+        alpha_2 = beta_t/(self.curr_beta_sum*mu_h+lam_t)
 
         train_loss = 0
         test_loss = 0
@@ -592,22 +586,30 @@ class PMDGeneralStateFiniteAction(FOPO):
             if X_i is None or len(X_i) == 0:
                 not_visited_actions.append(i)
                 continue
-            Q_acc_pred = self.fa_Q_accum.predict(X_i, i)
-            y_i        = self._last_y_a[i] # self.fa_Q.predict(X_i, i)
+            Q_acc_pred = self.fa_Q_accum.predict(X_i)[:,i]
+            y_i        = self._last_y_a[i] 
+            # y_i        = self.fa_Q.predict(X_i)[:,i]
             target_i = alpha_1 * Q_acc_pred + alpha_2*y_i
-            train_losses, test_losses = self.fa_Q_accum.update(X_i, target_i, i, validation_frac=0)
-            train_loss += train_losses[-1]
+            train_losses, test_losses = self.fa_Q_accum.update(
+                X_i, 
+                target_i,
+                i,
+                validation_frac=0
+            )
+            # TODO: What's going on here
+            train_loss += train_losses[-1,0]
             test_loss += 0 if len(test_losses)==0 else test_losses[-1]
         if len(not_visited_actions) > 0:
             print(f"Did not visit actions {not_visited_actions}")
 
+        if isinstance(train_loss, np.ndarray):
+            train_loss = np.sum(train_loss)
+        if isinstance(test_loss, np.ndarray):
+            test_loss = np.sum(test_loss)
+
         self.last_po_loss = train_loss/self.n_actions
         self.last_po_test_loss = test_loss/self.n_actions
         return train_losses, test_losses
-
-    def tsallis_policy_update(self):
-        """ Policy update with PMD and Tsallis divergence (with p=1/2) """
-        raise NotImplemented
 
     def policy_performance(self) -> float: 
         """ Estimate value function """
@@ -623,10 +625,10 @@ class PMDGeneralStateFiniteAction(FOPO):
         Runs the environment for a fixed number of iterations estimate
         empirical mean and variance of observations, actions, and rewards
         """
-        old_rollout_len = self.params["rollout_len"]
-        self.params["rollout_len"] = max(2048, old_rollout_len)
+        old_rollout_len = self.params["pmd_rollout_len"]
+        self.params["pmd_rollout_len"] = max(2048, old_rollout_len)
         self.collect_rollouts()
-        self.params["rollout_len"] =  old_rollout_len
+        self.params["pmd_rollout_len"] =  old_rollout_len
 
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()
         [self.normalize_obs(s) for s in s_visited]
@@ -665,10 +667,13 @@ class PMDGeneralStateFiniteAction(FOPO):
         q_s = []
         for i in range(self.n_actions):
             if self.params["pmd_fa_type"] == "linear":
-                self.fa_Q.set_coef(self.last_thetas[i], i)
-                self.fa_Q.set_intercept(self.last_intercepts[i], i)
-            q_s.append(self.fa_Q.predict(np.atleast_2d(s), i))
-        return q_s
+                self.fa_Q.set_coef(self.last_thetas[i])
+                self.fa_Q.set_intercept(self.last_intercepts[i])
+                q = self.fa_Q.predict(np.atleast_2d(s))
+            else:
+                q = self.fa_Q.predict(np.atleast_2d(s))[:,i]
+            q_s.append(q)
+        return np.squeeze(np.array(q_s))
 
     def estimate_value(self, s):
         if not self.updated_at_least_once:
@@ -684,7 +689,7 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         self.msg += "train/\n"
         self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
-        if self.params["fa_type"] == "nn":
+        if self.params["pmd_fa_type"] == "nn":
             self.msg += f"  {'po_train_loss':<{l}}: {self.last_po_loss:.4e}\n"
             self.msg += f"  {'po_test_loss':<{l}}: {self.last_po_test_loss:.4e}\n"
         if self.params.get("stepsize", "constant") == "constant":
@@ -694,7 +699,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         else:
             (beta_t, lam_t) = self.get_stepsize_schedule()
             self.msg += f"  {'stepsize':<{l}}: {beta_t:.2e}, {lam_t:.2e}\n"
-        if self.params["fa_type"] == "linear":
+        if self.params["pmd_fa_type"] == "linear":
             coef_change = la.norm(self.last_theta_accum - self.theta_accum)
             bias_change = la.norm(self.last_intercept_accum - self.intercept_accum)
             self.msg += f"  {'delta_coef':<{l}}: {coef_change:.4e}\n"
@@ -747,4 +752,4 @@ class PMDGeneralStateFiniteAction(FOPO):
                 # pi_s
                 fp.write(f"{tuple(self._policy_prog[i,1+n+2*n_a:1+n+3*n_a])}\n")
 
-        print(f"Saved policy progress data to {fname}")
+        print("Saved policy progress data to %s" % fname)
