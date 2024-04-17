@@ -15,14 +15,13 @@ import json
 
 import gymnasium as gym
 import gym_examples
-import or_gym
+# import or_gym
 
 from rl import PMDFiniteStateAction
 from rl import PMDGeneralStateFiniteAction
 from rl import PDAGeneralStateAction
 
 from rl import utils
-from rl import create_and_validate_settings
 
 def dictionary_clear_nones(dt):
     """ Returns a copied dictionary and removes keys whose value is None """

@@ -198,19 +198,19 @@ class NeuralNetwork(nn.Module):
         super().__init__()
         # n_hidden_layers = 2
         # layer_width = 128
-        n_hidden_layers = 2
+        n_hidden_layers = 1
         layer_width = 64
         if params["pmd_nn_type"] == "deep":
             n_hidden_layers = 4
         elif params["pmd_nn_type"] == "shallow":
             layer_depth = 128
 
-        modules = nn.ModuleList([nn.Linear(input_dim, layer_width, bias=False)])
+        modules = nn.ModuleList([nn.Linear(input_dim, layer_width, bias=True)])
         modules.extend([nn.Tanh()])
-        for _ in range(1, n_hidden_layers):
-            modules.extend([nn.Linear(layer_width, layer_width, bias=False)])
+        for _ in range(n_hidden_layers):
+            modules.extend([nn.Linear(layer_width, layer_width, bias=True)])
             modules.extend([nn.Tanh()])
-        modules.extend([nn.Linear(layer_width, output_dim, bias=False)])
+        modules.extend([nn.Linear(layer_width, output_dim, bias=True)])
         
         # https://discuss.pytorch.org/t/notimplementederror-module-modulelist-is-missing-the-required-forward-function/175049
         self.linears = nn.Sequential(*modules)

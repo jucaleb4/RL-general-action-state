@@ -19,7 +19,9 @@ class PPO(RLAlg):
         super().__init__(env, params)
 
     def _learn(self, max_iters):
-        self.env = Monitor(env=self.env, gamma=self.params["gamma"])
+        # Above is for a modified sb3
+        # self.env = Monitor(env=self.env, gamma=self.params["gamma"])
+        self.env = Monitor(env=self.env)
     
         max_episodes = self.params["max_episodes"] if self.params["max_episodes"] > 0 else np.inf
         callback_max_episodes = StopTrainingOnMaxEpisodes(
@@ -32,7 +34,7 @@ class PPO(RLAlg):
             policy=self.params['ppo_policy'],
             env=self.env, 
             verbose=1, 
-            n_steps=self.params['rollout_len'],
+            n_steps=self.params['ppo_rollout_len'],
             learning_rate=self.params['ppo_lr'],
             n_epochs=self.params['ppo_n_epochs'],
             batch_size=self.params['ppo_batch_size'],
@@ -42,6 +44,7 @@ class PPO(RLAlg):
             max_grad_norm=max_grad_norm,
             normalize_advantage=self.params["ppo_normalize_adv"],
         )
+        import ipdb; ipdb.set_trace()
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()

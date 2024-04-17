@@ -138,7 +138,7 @@ class FOPO(RLAlg):
     def get_stepsize_schedule(self):
         """ Returns stepsize for both PDA and PMD.
 
-        The step sizes $(beta_t, lam_t)$ are from PDA; We can set $eta_t = beta_t / lam_t$ in PDA.
+        The step sizes $(beta_t, lam_t)$ are from PDA; We can set $eta_t = beta_t / lam_t$ in PMD.
         """
         stepsize_base = self.params["pmd_stepsize_base"]
         if self.params["pmd_stepsize_type"] == "pmd":
@@ -375,11 +375,45 @@ class PMDGeneralStateFiniteAction(FOPO):
                 params=params
             )
 
+        self.sb3_policy = None
+        if self.params["pmd_sb3_policy"]:
+            from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
+            self.sb3_policy = OnPolicyAlgorithm(
+                policy='MlpPolicy',
+                env=self.env,
+                learning_rate=params['ppo_lr'],
+                n_steps=params['ppo_rollout_len'],
+                gamma=params['gamma'],
+                gae_lambda=params['ppo_gae_lambda'],
+                ent_coef=0.0,
+                vf_coef=0.5,
+                max_grad_norm=params['ppo_max_grad_norm'],
+                use_sde=False,
+                sde_sample_freq=-1,
+                rollout_buffer_class=None,
+                rollout_buffer_kwargs=None,
+                stats_window_size=100,
+                tensorboard_log=None,
+                policy_kwargs=None,
+                verbose=0,
+                device='cpu',
+                seed=params['seed'],
+                _init_setup_model=True,
+                supported_action_spaces=(
+                    spaces.Box,
+                    spaces.Discrete,
+                    spaces.MultiDiscrete,
+                    spaces.MultiBinary,
+                ),
+            )
+
         self.last_max_q_est = ...
         self.last_max_adv_est = ...
         self.last_policy_at_s = np.ones(self.n_actions, dtype=float)/self.n_actions
-        self._last_s_visited_at_a = [None] * self.n_actions
-        self._last_y_a = [None] * self.n_actions
+
+        self._last_s_visited = ...
+        self._last_a_visited = ...
+        self._last_y = ...
 
         # TEMP: For human baseline to see change in policy and policy evaluation
         try:
@@ -408,18 +442,25 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         log_policy_at_s = np.zeros(self.n_actions, dtype=float)
         mu_h = self.params["pmd_mu_h"]
-        for i in range(self.n_actions):
-            if self.params["pmd_fa_type"] == "linear":
+        (beta_t, lam_t) = self.get_stepsize_schedule()
+        if self.params["pmd_fa_type"] == "linear":
+            for i in range(self.n_actions):
                 self.fa_Q.set_coef(self.theta_accum[i])
                 self.fa_Q.set_intercept(self.intercept_accum[i])
                 log_policy_at_s[i] = self.fa_Q.predict(np.atleast_2d(s))
-            else:
-                # Since fa_Q_accum learns:
-                # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t$,
-                # which is the average, we need to scale it for PDA
-                # alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
-                # log_policy_at_s[i] = alpha * self.fa_Q_accum.predict(np.atleast_2d(s))[0,i]
-                log_policy_at_s[i] = np.squeeze(self.fa_Q_accum.predict(np.atleast_2d(s)))[i]
+        elif self.params["pmd_stepsize_type"] == "pmd":
+            # Since fa_Q_accum learns:
+            # $(\eta_sum_k)^{-1}\sum_{t=0}^k (1+eta mu)^{k-t} \eta Q(s,a;theta_t)
+            # where $\eta_sum_k = (k+1) * eta/(1+eta*mu)$
+            eta = beta_t/lam_t
+            eta_sum = (self.t+1)*eta/(1+eta*mu_h)
+            log_policy_at_s = eta_sum * self.fa_Q_accum.predict(np.atleast_2d(s))[0]
+        else:
+            # Since fa_Q_accum learns:
+            # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t)$,
+            # we need to scale it back
+            alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
+            log_policy_at_s = alpha * self.fa_Q_accum.predict(np.atleast_2d(s))[0]
 
         return log_policy_at_s
 
@@ -471,6 +512,10 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_max_adv_est = np.max(np.abs(adv_est))
         self.emp_Q_max_arr.append(np.max(y))
 
+        self._last_s_visited = np.copy(X)
+        self._last_a_visited = np.copy(a_visited)
+        self._last_y = np.copy(y)
+
         # extract fitted parameters
         not_visited_actions = []
         loss = 0.
@@ -480,8 +525,6 @@ class PMDGeneralStateFiniteAction(FOPO):
             if len(action_i_idx) == 0:
                 not_visited_actions.append(i)
                 continue
-            self._last_s_visited_at_a[i] = np.copy(X[action_i_idx])
-            self._last_y_a[i] = np.copy(y[action_i_idx])
             if self.params['pmd_fa_type'] == "linear":
                 self.fa_Q.set_coef(self.last_thetas[i])
                 self.fa_Q.set_intercept(self.last_intercepts[i])
@@ -574,31 +617,34 @@ class PMDGeneralStateFiniteAction(FOPO):
         # curr_alpha_t = self.curr_beta_sum*mu_h + lam_t
         # prev_alpha_t = self.prev_beta_sum*mu_h + self.prev_lam_t
 
-        alpha_1 = self.prev_beta_sum*mu_h+self.prev_lam_t
-        alpha_1 /= (self.curr_beta_sum*mu_h + lam_t)
-        alpha_2 = beta_t/(self.curr_beta_sum*mu_h+lam_t)
+        if self.params['pmd_stepsize_type'] == 'pmd':
+            eta_t = beta_t/lam_t
+            alpha = 1+eta_t*mu_h
+            alpha_1 = 1./alpha * self.t/(self.t+1)
+            alpha_2 = 1./alpha * 1./(self.t+1)
+        else:
+            alpha_1 = self.prev_beta_sum/self.curr_beta_sum
+            alpha_2 = beta_t/self.curr_beta_sum
 
         train_loss = 0
         test_loss = 0
-        not_visited_actions = []
-        for i in range(self.n_actions):
-            X_i = self._last_s_visited_at_a[i]
-            if X_i is None or len(X_i) == 0:
-                not_visited_actions.append(i)
-                continue
-            Q_acc_pred = self.fa_Q_accum.predict(X_i)[:,i]
-            y_i        = self._last_y_a[i] 
-            # y_i        = self.fa_Q.predict(X_i)[:,i]
-            target_i = alpha_1 * Q_acc_pred + alpha_2*y_i
+        y        = self._last_y 
+        # y        = self.fa_Q.predict(X_i)[:,i]
+        Q_acc_pred = self.fa_Q_accum.predict(self._last_s_visited, self._last_a_visited)
+        target = alpha_1 * Q_acc_pred + alpha_2*y
+
+        for _ in range(self.params['pmd_pe_max_epochs']):
             train_losses, test_losses = self.fa_Q_accum.update(
-                X_i, 
-                target_i,
-                i,
+                self._last_s_visited, 
+                self._last_a_visited,
+                target,
                 validation_frac=0
             )
-            # TODO: What's going on here
-            train_loss += train_losses[-1,0]
-            test_loss += 0 if len(test_losses)==0 else test_losses[-1]
+
+        # TODO: What's going on here
+        train_loss += train_losses[-1,0]
+        test_loss += 0 if len(test_losses)==0 else test_losses[-1]
+
         if len(not_visited_actions) > 0:
             print(f"Did not visit actions {not_visited_actions}")
 

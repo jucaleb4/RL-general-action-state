@@ -67,6 +67,7 @@ def setup_setting_files(seed, max_steps):
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
         ('pmd_max_grad_norm', -1),
+        ('pmd_sb3_policy', False),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),
@@ -126,49 +127,10 @@ def setup_setting_files(seed, max_steps):
     # PMD continuous state finite action (nn)
     od['alg'] = 'pmd'
     od['env_name'] = 'LunarLander-v2'
-    od['pmd_stepsize_type'] = 'pmd' 
-    od['pmd_fa_type'] = "nn"
-    od['pmd_pe_stepsize_base'] = 0.001
-    od['pmd_pe_alpha'] = 0.0
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PDA continuous state finite action (rkhs)
-    od['alg'] = 'pmd'
-    od['env_name'] = 'LunarLander-v2'
-    od['pmd_stepsize_type'] = 'pda_1' 
-    od['pmd_fa_type'] = "linear"
-    od['pmd_pe_stepsize_base'] = 0.01
-    od['pmd_pe_alpha'] = 0.0001
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PMD continuous state finite action (nn)
-    od['pda'] = 'pmd'
-    od['env_name'] = 'LunarLander-v2'
     od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "nn"
     od['pmd_pe_stepsize_base'] = 0.001
     od['pmd_pe_alpha'] = 0.0
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PDA continuous state and action
-    od['alg'] = 'pda'
-    od['env_name'] = 'Humanoid-v4'
-    od['pmd_stepsize_type'] = 'pda_2' 
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
         os.makedirs(od["log_folder"])

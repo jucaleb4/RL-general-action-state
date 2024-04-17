@@ -1,6 +1,5 @@
 from rl.alg import RLAlg
 import rl.utils as utils
-from rl.hyperparams import create_and_validate_settings
 
 from rl.rollout import Rollout
 from rl.estimator import LinearFunctionApproximator
