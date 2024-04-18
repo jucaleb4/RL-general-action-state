@@ -87,7 +87,7 @@ def setup_setting_files(seed, max_steps):
     od['env_name'] = 'GridWorld-v0'
     od['pmd_stepsize_type'] = 'pmd' 
     od['pmd_fa_type'] = "linear"
-    od['pmd_pe_stepsize_base'] = 0.1
+    od['pmd_stepsize_base'] = 0.5
     od['pmd_pe_alpha'] = 0.0001
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
@@ -101,7 +101,7 @@ def setup_setting_files(seed, max_steps):
     od['env_name'] = 'GridWorld-v0'
     od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "nn"
-    od['pmd_pe_stepsize_base'] = 0.1
+    od['pmd_stepsize_base'] = 0.5
     od['pmd_pe_alpha'] = 0.0001
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
@@ -115,7 +115,7 @@ def setup_setting_files(seed, max_steps):
     od['env_name'] = 'LunarLander-v2'
     od['pmd_stepsize_type'] = 'pmd' 
     od['pmd_fa_type'] = "linear"
-    od['pmd_pe_stepsize_base'] = 0.01
+    od['pmd_stepsize_base'] = 0.01
     od['pmd_pe_alpha'] = 0.0001
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
@@ -129,7 +129,7 @@ def setup_setting_files(seed, max_steps):
     od['env_name'] = 'LunarLander-v2'
     od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "nn"
-    od['pmd_pe_stepsize_base'] = 0.001
+    od['pmd_stepsize_base'] = 0.001
     od['pmd_pe_alpha'] = 0.0
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):

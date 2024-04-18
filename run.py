@@ -46,7 +46,7 @@ def main(params, output={}):
                 full_env_name,
                 # render_mode="human",
                 max_episode_steps=1000, # can change length here!
-                size=3,
+                size=2,
             )
         else:
             full_env_name = env_name
@@ -94,7 +94,10 @@ def main(params, output={}):
     else:
         return 
 
-    output[params['seed']] = alg.learn(params["max_iters"])
+    if alg in ["pmd", "pda"]:
+        output[params['seed']] = alg.learn(params["max_iters"])
+    else:
+        output[params['seed']] = alg.learn(params["max_steps"])
 
 def run_main_multiprocessing(alg, env_name, num_start, num_end, params):
     num_exp = num_end - num_start

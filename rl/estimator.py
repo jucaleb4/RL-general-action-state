@@ -280,29 +280,43 @@ class NNFunctionApproximator(FunctionApproximator):
         self.max_epochs = params["pmd_pe_max_epochs"]
         self.batch_size = params["pmd_batch_size"]
 
-    def predict(self, X):
+    def predict(self, X: np.ndarray, i_s: np.ndarray) -> np.ndarray:
+        """
+        Evaluates model(X) and extracts i_s elements
+        """
         # Eval mode (https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.eval)
         self.model.eval()
 
-        Y = []
         with torch.no_grad():
-            for j,X_j in enumerate(X):
+            Y_pred = self.model(torch.from_numpy(X).to(self.device).float())
+
+            i_s = torch.from_numpy(i_s).long()
+            if len(i_s.shape) == 1:
+                i_s_2d = i_s.long().unsqueeze(-1)
+            else:
+                i_s_2d = i_s.long()
+            i_s_2d, Y_pred = torch.broadcast_tensors(i_s_2d, Y_pred)
+            i_s_2d = i_s_2d[..., :1]
+            y = Y_pred.gather(-1, i_s_2d).squeeze(1)
+            """
+            for j,(X_j,i) in enumerate(zip(X,i_s)):
                 X_j = torch.from_numpy(X_j).to(self.device).float()
-                y_pred = self.model(X_j)
+                y_pred = self.model(X_j)[i]
                 # https://stackoverflow.com/questions/55466298/pytorch-cant-call-numpy-on-variable-that-requires-grad-use-var-detach-num
                 # y.append(y_pred.numpy())
-                Y.append(y_pred.detach().numpy())
+                y.append(y_pred.detach().numpy())
+            """
 
         # TODO: Detect if we ever want multi-dimensional...
         # return np.squeeze(np.array(Y))
-        return np.array(Y)
+        return y.numpy()
 
-    def update(self, X, y, i_a, validation_frac=0.1, skip_losses=False):
+    def update(self, X, i_s, y, validation_frac=0.1, skip_losses=False):
         """ Updates neural network
 
         :param X: 
         :param y:
-        :param a_s: indices for which y corresponds to (if None
+        :param i_s: indices from model(X) we want to take the loss of
         :param validation_frac: validation fraction for testing
         :param skip_losses: skip computation of training loss
         """
@@ -313,12 +327,10 @@ class NNFunctionApproximator(FunctionApproximator):
             raise RuntimeError("Inputs X,y are not list or numpy arrays")
         if not(len(X) == len(y)):
             raise RuntimeError("len(X) does not match len(y)")
-        assert 0 <= i_a < self.output_dim, "Invalid index i_a=%s" % i_a
-        if self.output_dim == 1:
-            i_a = 0
+        assert 0 <= np.min(i_s) and np.max(i_s) < self.output_dim, "Invalid index i_s=%s" % i_s
 
         # TODO: Make these customizable
-        dataset = list(zip(X,y))
+        dataset = list(zip(X,y,i_s))
         val_idx= int(len(dataset)*(1.-validation_frac))
 
         train_losses = []
@@ -329,21 +341,21 @@ class NNFunctionApproximator(FunctionApproximator):
         for _ in range(self.max_epochs):
             # TODO: Better way to do cross validation
             random.shuffle(dataset)
-            X_train, y_train = list(zip(*dataset[:val_idx]))
-            train_set = list(zip(X_train, y_train))
+            X_train, y_train, i_s_train = list(zip(*dataset[:val_idx]))
+            train_set = list(zip(X_train, y_train, i_s_train))
 
             train_loader = torch.utils.data.DataLoader(
                 train_set, 
                 batch_size=batch_size, 
                 shuffle=True
             )
-            self._train_one_epoch(train_loader, i_a)
+            self._train_one_epoch(train_loader)
 
             if skip_losses: 
                 continue
 
-            y_train_pred = self.predict(X_train)
-            train_losses.append((y_train-y_train_pred[:,i_a])**2)
+            y_train_pred = self.predict(np.array(X_train), np.array(i_s_train))
+            train_losses.append(np.mean(np.square((y_train-y_train_pred))))
             """
             if val_idx < len(dataset):
                 X_test, y_test = list(zip(*dataset[val_idx:]))
@@ -353,26 +365,35 @@ class NNFunctionApproximator(FunctionApproximator):
 
         return np.array(train_losses), np.array(test_losses)
 
-    def _train_one_epoch(self, train_loader, i_a):
+    def _train_one_epoch(self, train_loader):
         running_loss = 0.
         last_loss = 0.
 
         self.model.train()
         for j, data in enumerate(train_loader):
-            X_j, y_j = data
+            X_j, y_j, i_j = data
 
             # https://discuss.pytorch.org/t/runtimeerror-mat1-and-mat2-must-have-the-same-dtype/166759
             X_j = X_j.float() # X_i = torch.from_numpy(X_i).to(self.device).float()
             y_j = y_j.float() # y_i = torch.from_numpy(y_i).to(self.device).float()
 
-            pred_j = self.model(torch.atleast_2d(X_j))
+            Pred_j = self.model(torch.atleast_2d(X_j))
+
+            if len(i_j.shape) == 1:
+                i_j_2d = i_j.long().unsqueeze(-1)
+            else:
+                i_j_2d = i_j.long()
+            i_j_2d, Pred_j = torch.broadcast_tensors(i_j_2d, Pred_j)
+            i_j_2d = i_j_2d[..., :1]
+            pred_j = Pred_j.gather(-1, i_j_2d).squeeze(1)
+            """
             # TODO: Is this the right way to do it?
             if len(pred_j.shape) > 1:
                 pred_j = torch.squeeze(pred_j)
             if len(pred_j.shape) == 0:
                 continue
-            # loss = self.loss_fn(pred_j, y_j)
-            loss = (pred_j[:,i_a] - y_j).pow(2).mean()
+            """
+            loss = self.loss_fn(pred_j, y_j)
 
             # Zero your gradients for every batch!
             self.optimizer.zero_grad()
@@ -385,10 +406,6 @@ class NNFunctionApproximator(FunctionApproximator):
 
             # Gather data and report
             last_loss = loss.item()
-
-        # TEMP: Print the weights
-        # for name, param in self.models[i].named_parameters():
-        #     print(f"params: {name}:\n{param}")
 
         return last_loss
 

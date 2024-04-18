@@ -22,6 +22,8 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 
+import torch as th
+
 class FOPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
@@ -115,6 +117,75 @@ class FOPO(RLAlg):
                 if self.n_episodes == self.max_episodes or self.n_step == self.max_steps:
                     return 
                 s, _ = self.env.reset()
+
+    def sb3_collect_rollouts(self):
+        assert self._last_obs is not None, "No previous observation was provided"
+        # Switch to eval mode (this affects batch norm / dropout)
+        self.sb3_policy.policy.set_training_mode(False)
+
+        n_steps = 0
+        self.rollout_buffer.reset()
+
+        # Sample new weights for the state dependent exploration
+        # if self.use_sde:
+        if False:
+            num_envs = 1
+            self.sb3_policy.policy.reset_noise(num_envs)
+
+        while n_steps < n_rollout_steps:
+            # if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
+            if False:
+                # Sample a new noise matrix
+                num_envs = 1
+                self.sb3_policy.policy.reset_noise(num_envs)
+
+            with th.no_grad():
+                # Convert to pytorch tensor or to TensorDict
+                obs_tensor = obs_as_tensor(self._last_obs, self.sb3_policy.device)
+                _, values, log_probs = self.policy(obs_tensor) 
+
+            action = self.policy_sample(self._last_obs)
+
+            new_obs, rewards, dones, infos = self.env.step(action)
+
+            self.num_timesteps += 1
+
+            self.sb3_policy._update_info_buffer(infos)
+            n_steps += 1
+
+            if isinstance(self.action_space, spaces.Discrete):
+                # Reshape in case of discrete action
+                actions = actions.reshape(-1, 1)
+
+            # Handle timeout by bootstraping with value function
+            # see GitHub issue #633
+            for idx, done in enumerate(dones):
+                if (
+                    done
+                    and infos[idx].get("terminal_observation") is not None
+                    and infos[idx].get("TimeLimit.truncated", False)
+                ):
+                    terminal_obs = self.sb3_policy.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    with th.no_grad():
+                        terminal_value = self.sb3_policy.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
+                    rewards[idx] += self.gamma * terminal_value
+
+            self.rollout_buffer.add( 
+                self._last_obs,  # type: ignore[arg-type]
+                actions,
+                rewards,
+                self._last_episode_starts,  # type: ignore[arg-type]
+                values,
+                log_probs,
+            )
+            self._last_obs = new_obs  # type: ignore[assignment]
+            self._last_episode_starts = dones
+
+        with th.no_grad():
+            # Compute value for the last timestep
+            values = self.sb3_pocliy.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]
+
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
     @abstractmethod
     def policy_evaluate(self):
@@ -378,6 +449,8 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.sb3_policy = None
         if self.params["pmd_sb3_policy"]:
             from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
+            from stable_baselines3.common.buffers import RolloutBuffer
+            from stable_baselines3.common.utils import obs_as_tensor, safe_mean
             self.sb3_policy = OnPolicyAlgorithm(
                 policy='MlpPolicy',
                 env=self.env,
@@ -405,6 +478,15 @@ class PMDGeneralStateFiniteAction(FOPO):
                     spaces.MultiDiscrete,
                     spaces.MultiBinary,
                 ),
+            )
+            self.rollout_buffer = RolloutBuffer(
+                params['ppo_rollout_len'],
+                self.obs_space,
+                self.action_space,
+                device='cpu',
+                gamma=params['gamma'],
+                gae_lambda=params['ppo_gae_lambda'],
+                n_envs=1,
             )
 
         self.last_max_q_est = ...
@@ -454,13 +536,19 @@ class PMDGeneralStateFiniteAction(FOPO):
             # where $\eta_sum_k = (k+1) * eta/(1+eta*mu)$
             eta = beta_t/lam_t
             eta_sum = (self.t+1)*eta/(1+eta*mu_h)
-            log_policy_at_s = eta_sum * self.fa_Q_accum.predict(np.atleast_2d(s))[0]
+            log_policy_at_s = eta_sum * self.fa_Q_accum.predict(
+                np.atleast_2d(s),
+                np.arange(self.n_actions),
+            )
         else:
             # Since fa_Q_accum learns:
             # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t)$,
             # we need to scale it back
             alpha = self.curr_beta_sum/(self.curr_beta_sum*mu_h + lam_t)
-            log_policy_at_s = alpha * self.fa_Q_accum.predict(np.atleast_2d(s))[0]
+            log_policy_at_s = alpha * self.fa_Q_accum.predict(
+                np.atleast_2d(s),
+                np.arange(self.n_actions),
+            )
 
         return log_policy_at_s
 
@@ -520,12 +608,12 @@ class PMDGeneralStateFiniteAction(FOPO):
         not_visited_actions = []
         loss = 0.
         sto_Q_arr = [0]
-        for i in range(self.n_actions):
-            action_i_idx = np.where(a_visited==i)[0]
-            if len(action_i_idx) == 0:
-                not_visited_actions.append(i)
-                continue
-            if self.params['pmd_fa_type'] == "linear":
+        if self.params['pmd_fa_type'] == "linear":
+            for i in range(self.n_actions):
+                action_i_idx = np.where(a_visited==i)[0]
+                if len(action_i_idx) == 0:
+                    not_visited_actions.append(i)
+                    continue
                 self.fa_Q.set_coef(self.last_thetas[i])
                 self.fa_Q.set_intercept(self.last_intercepts[i])
                 train_loss, _ = self.fa_Q.update(X[action_i_idx], y[action_i_idx])
@@ -533,18 +621,14 @@ class PMDGeneralStateFiniteAction(FOPO):
                 sto_Q_arr.append(np.mean(np.square(pred)))
                 self.last_thetas[i] = self.fa_Q.get_coef()
                 self.last_intercepts[i] = self.fa_Q.get_intercept()
-            else:
-                train_loss, _ = self.fa_Q.update(
-                    X[action_i_idx], 
-                    y[action_i_idx], 
-                    i,
-                    validation_frac=0
-                )
-            if isinstance(train_loss, float) or isinstance(train_loss, int):
-                loss += train_loss 
-            else:
-                # TODO: What's going on here
-                loss += train_loss[0,0]
+        else:
+            train_loss,_ = self.fa_Q.update(X, a_visited, y, validation_frac=0)
+
+        if isinstance(train_loss, float) or isinstance(train_loss, int):
+            loss += train_loss 
+        else:
+            # TODO: What's going on here
+            loss += np.mean(train_loss)
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
 
@@ -633,28 +717,15 @@ class PMDGeneralStateFiniteAction(FOPO):
         Q_acc_pred = self.fa_Q_accum.predict(self._last_s_visited, self._last_a_visited)
         target = alpha_1 * Q_acc_pred + alpha_2*y
 
-        for _ in range(self.params['pmd_pe_max_epochs']):
-            train_losses, test_losses = self.fa_Q_accum.update(
-                self._last_s_visited, 
-                self._last_a_visited,
-                target,
-                validation_frac=0
-            )
+        train_losses, test_losses = self.fa_Q_accum.update(
+            self._last_s_visited, 
+            self._last_a_visited,
+            target,
+            validation_frac=0
+        )
 
-        # TODO: What's going on here
-        train_loss += train_losses[-1,0]
-        test_loss += 0 if len(test_losses)==0 else test_losses[-1]
-
-        if len(not_visited_actions) > 0:
-            print(f"Did not visit actions {not_visited_actions}")
-
-        if isinstance(train_loss, np.ndarray):
-            train_loss = np.sum(train_loss)
-        if isinstance(test_loss, np.ndarray):
-            test_loss = np.sum(test_loss)
-
-        self.last_po_loss = train_loss/self.n_actions
-        self.last_po_test_loss = test_loss/self.n_actions
+        self.last_po_loss = np.mean(train_losses)
+        self.last_po_test_loss = np.mean(test_losses)
         return train_losses, test_losses
 
     def policy_performance(self) -> float: 
@@ -711,14 +782,14 @@ class PMDGeneralStateFiniteAction(FOPO):
         if not self.updated_at_least_once:
             return np.zeros(self.n_actions)
         q_s = []
-        for i in range(self.n_actions):
-            if self.params["pmd_fa_type"] == "linear":
+        if self.params["pmd_fa_type"] == "linear":
+            for i in range(self.n_actions):
                 self.fa_Q.set_coef(self.last_thetas[i])
                 self.fa_Q.set_intercept(self.last_intercepts[i])
                 q = self.fa_Q.predict(np.atleast_2d(s))
-            else:
-                q = self.fa_Q.predict(np.atleast_2d(s))[:,i]
-            q_s.append(q)
+                q_s.append(q)
+        else:
+            q_s = self.fa_Q.predict(np.atleast_2d(s), np.arange(self.n_actions))
         return np.squeeze(np.array(q_s))
 
     def estimate_value(self, s):
