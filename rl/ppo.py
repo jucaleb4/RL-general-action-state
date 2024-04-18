@@ -44,7 +44,6 @@ class PPO(RLAlg):
             max_grad_norm=max_grad_norm,
             normalize_advantage=self.params["ppo_normalize_adv"],
         )
-        import ipdb; ipdb.set_trace()
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()

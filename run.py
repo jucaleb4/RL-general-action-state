@@ -46,7 +46,7 @@ def main(params, output={}):
                 full_env_name,
                 # render_mode="human",
                 max_episode_steps=1000, # can change length here!
-                size=2,
+                size=5,
             )
         else:
             full_env_name = env_name
