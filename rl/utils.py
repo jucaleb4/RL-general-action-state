@@ -158,7 +158,7 @@ class RunningStat():
         S[idx_where_var_small] = 1
         return S/(self.k-1.)
 
-def tsallis_policy_update(x, cum_grad, eta_t, lam=None):
+def tsallis_policy_update(cum_grad, eta_t, lam=None):
     """ Policy update for Tsallis Inf. Solves up to accuracy 1e-6 if warm-start
     and 1e-8 for cold start.
 
@@ -180,7 +180,6 @@ def tsallis_policy_update(x, cum_grad, eta_t, lam=None):
     \]
     So we compute this x_i and do binary search on y until this quantity x_i is a probability simplex
 
-    :param x: current policy
     :param cum_grad: cumulative gradient
     :param eta_t: step size
     :param lam: lam to use for warm start

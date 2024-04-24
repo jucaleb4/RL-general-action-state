@@ -5,7 +5,7 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_16_2024"
+DATE = "04_23_2024"
 EXP_ID = 0
 MAX_RUNS = 1
 
@@ -43,6 +43,7 @@ def setup_setting_files(seed, max_steps):
     od = OrderedDict([
         ('alg', 'pmd'),
         ('env_name', 'LunarLander-v2'),
+        ('lunar_perturbed', False),
         ('seed', seed),
         ('parallel', False),
         ('trials', 1),
@@ -50,10 +51,10 @@ def setup_setting_files(seed, max_steps):
         ('max_episodes', 10_000),
         ('max_steps', max_steps),
         ('gamma', 0.99),
-        ('pmd_rollout_len', 2048),
+        ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
         ('pmd_stepsize_type', 'pmd'),
-        ('pmd_stepsize_base', 0.01),
+        ('pmd_stepsize_base', 1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
         ('pmd_normalize_obs', False),
@@ -62,11 +63,12 @@ def setup_setting_files(seed, max_steps):
         ('pmd_pe_stepsize_type', 'constant'),
         ('pmd_pe_stepsize_base', 1e-3),
         ('pmd_pe_alpha', 1e-4),
-        ('pmd_pe_max_epochs', 10),
+        ('pmd_pe_max_epochs', 100),
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
         ('pmd_max_grad_norm', -1),
+        ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
@@ -76,81 +78,18 @@ def setup_setting_files(seed, max_steps):
         ('ppo_gae_lambda', 0.95),
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
-        ('ppo_normalize_adv', False),
     ])
 
     folder_name = create_settings_and_logs_folders(od)
     ct = 0
 
-    # PMD continuous state finite action (rkhs)
-    od['alg'] = 'pmd'
+    # PDA Lunar_lander with nn 
     od['env_name'] = 'GridWorld-v0'
-    od['pmd_stepsize_type'] = 'pmd' 
-    od['pmd_fa_type'] = "linear"
-    od['pmd_stepsize_base'] = 0.5
-    od['pmd_pe_alpha'] = 0.0001
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PMD continuous state finite action (rkhs)
-    od['alg'] = 'pmd'
-    od['env_name'] = 'GridWorld-v0'
-    od['pmd_stepsize_type'] = 'pda_1' 
     od['pmd_fa_type'] = "nn"
-    od['pmd_stepsize_base'] = 0.5
-    od['pmd_pe_alpha'] = 0.0001
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PMD continuous state finite action (rkhs)
-    od['alg'] = 'pmd'
-    od['env_name'] = 'LunarLander-v2'
-    od['pmd_stepsize_type'] = 'pmd' 
-    od['pmd_fa_type'] = "linear"
-    od['pmd_stepsize_base'] = 0.01
-    od['pmd_pe_alpha'] = 0.0001
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PMD continuous state finite action (nn)
-    od['alg'] = 'pmd'
-    od['env_name'] = 'LunarLander-v2'
-    od['pmd_stepsize_type'] = 'pda_1' 
-    od['pmd_fa_type'] = "nn"
-    od['pmd_stepsize_base'] = 0.001
+    od['pmd_stepsize_type'] = 'pda_1'
+    od["pmd_stepsize_base"] = 0.1
     od['pmd_pe_alpha'] = 0.0
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PPO continuous state finite action
-    od['alg'] = 'ppo'
-    od['env_name'] = 'LunarLander-v2'
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    # PPO continuous state and action
-    od['alg'] = 'ppo'
-    od['env_name'] = 'Humanoid-v4'
+    od['pmd_pe_stepsize_base'] = 0.001
     fname = os.path.join(folder_name, "run_%s.json" % ct)
     if not(os.path.exists(od["log_folder"])):
         os.makedirs(od["log_folder"])

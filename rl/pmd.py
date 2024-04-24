@@ -21,6 +21,7 @@ from rl.utils import get_space_property
 from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
+from rl.utils import tsallis_policy_update
 
 import torch as th
 
@@ -445,6 +446,7 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.last_max_q_est = ...
         self.last_max_adv_est = ...
         self.last_policy_at_s = np.ones(self.n_actions, dtype=float)/self.n_actions
+        self.last_dual_tsallis = None
 
         self._last_s_visited = ...
         self._last_a_visited = ...
@@ -571,7 +573,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 np.atleast_2d(s),
                 np.arange(self.n_actions),
             )
-        else:
+        elif "pda" in self.params["pmd_stepsize_type"]:
             # Since fa_Q_accum learns:
             # $(beta_sum)^{-1}\sum_{t=0}^k \beta_t Q(s,a;\theta_t)$,
             # we need to scale it back
@@ -580,6 +582,8 @@ class PMDGeneralStateFiniteAction(FOPO):
                 np.atleast_2d(s),
                 np.arange(self.n_actions),
             )
+        else:
+            raise Exception("Unknown pmd step size type %s" % self.params["pmd_stepsize_type"])
 
         return log_policy_at_s
 
@@ -588,8 +592,28 @@ class PMDGeneralStateFiniteAction(FOPO):
             return np.ones(self.n_actions, dtype=float)/self.n_actions
 
         log_policy_at_s = self._get_logpolicy(s)
-        policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
-        policy_at_s = np.atleast_2d(policy_at_s)
+
+        if self.params['pmd_policy_divergence'] == 'kl':
+            policy_at_s = np.exp((log_policy_at_s - np.max(log_policy_at_s)))
+            policy_at_s = np.atleast_2d(policy_at_s)
+        elif self.params['pmd_policy_divergence'] == 'tsallis':
+            # we can only use Tsallis divergence with PDA
+            assert "pda" in self.params["pmd_stepsize_type"], "Can only use Tsallis divergence with PDA"
+
+            mu_h = self.params["pmd_mu_h"]
+            (beta_t, lam_t) = self.get_stepsize_schedule()
+            # need to remove scaling factor (see `_get_logpolicy`)
+            alpha = self.curr_beta_sum*mu_h + lam_t
+            grad_sum = alpha * log_policy_at_s 
+            policy_at_s, dual_tsallis = tsallis_policy_update(
+                -grad_sum, # take negative since we want to maximize
+                1./lam_t,  # 1/lam_t since tsallis update takes reciprocal of it
+                self.last_dual_tsallis,
+            )
+            policy_at_s = np.expand_dims(policy_at_s, axis=0)
+            self.last_dual_tsallis = dual_tsallis
+        else:
+            raise Exception("Unknown policy divergence %s" % self.params['pmd_policy_divergence'])
 
         safe_normalize_row(policy_at_s)
 
@@ -752,7 +776,7 @@ class PMDGeneralStateFiniteAction(FOPO):
                 # Normalize advantage
                 advantages = rollout_data.advantages
                 # Normalization does not make sense if mini batchsize == 1, see GH issue #325
-                # if self.params['pmd_normalize_sa_val'] and len(advantages) > 1:
+                # if self.params['ppo_normalize_adv'] and len(advantages) > 1:
                 #     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 # Value loss using the TD(gae_lambda) target

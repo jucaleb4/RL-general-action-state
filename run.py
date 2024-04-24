@@ -37,7 +37,7 @@ def main(params, output={}):
             # render_mode="human",
             max_episode_steps=1000, # can change length here!
             # gravity = -4.0 if params.get("lunar_perturbed", False) else -10.,
-            # enable_wind= params.get("lunar_perturbed", False),
+            enable_wind= params["lunar_perturbed"],
         )
     else:
         if "GridWorld" in env_name:
@@ -46,7 +46,8 @@ def main(params, output={}):
                 full_env_name,
                 # render_mode="human",
                 max_episode_steps=1000, # can change length here!
-                size=5,
+                size=10,
+                num_obstacles=10,
             )
         else:
             full_env_name = env_name
