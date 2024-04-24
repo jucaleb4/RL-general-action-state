@@ -7,7 +7,7 @@ import json
 
 DATE = "04_23_2024"
 EXP_ID = 0
-MAX_RUNS = 1
+MAX_RUNS = 18
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -37,8 +37,6 @@ def create_settings_and_logs_folders(od):
         if not(os.path.exists(log_folder_base)):
             os.makedirs(log_folder_base)
 
-    return folder_name
-
 def setup_setting_files(seed, max_steps):
     od = OrderedDict([
         ('alg', 'pmd'),
@@ -67,7 +65,7 @@ def setup_setting_files(seed, max_steps):
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
-        ('pmd_max_grad_norm', -1),
+        ('pmd_max_grad_norm', 1),
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
         ('ppo_policy', "MlpPolicy"),
@@ -80,22 +78,45 @@ def setup_setting_files(seed, max_steps):
         ('ppo_max_grad_norm', -1),
     ])
 
-    folder_name = create_settings_and_logs_folders(od)
+    create_settings_and_logs_folders(od)
+    log_folder_base = os.path.join("logs", DATE, "exp_%s" % EXP_ID)
+    setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
     # PDA Lunar_lander with nn 
-    od['env_name'] = 'GridWorld-v0'
-    od['pmd_fa_type'] = "nn"
+    env_names = ['GridWorld-v0', 'LunarLander-v2']
+    fa_types = ['linear', 'nn', 'nn']
+    pe_base_stepsizes = [0.01, 0.001, 0.0001]
+    alphas = [1e-4, 0, 0]
+    policy_dvgs = ['kl', 'kl', 'tsallis']
+    base_stepsizes = [10,1,0.1]
+    base_stepsize_multiplier = [0.1, 1, 1]
+
     od['pmd_stepsize_type'] = 'pda_1'
-    od["pmd_stepsize_base"] = 0.1
-    od['pmd_pe_alpha'] = 0.0
-    od['pmd_pe_stepsize_base'] = 0.001
-    fname = os.path.join(folder_name, "run_%s.json" % ct)
-    if not(os.path.exists(od["log_folder"])):
-        os.makedirs(od["log_folder"])
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
+    for env_name in env_names:
+        od['env_name'] = env_name
+        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, base_mult in zip(
+                fa_types, 
+                policy_dvgs, 
+                pe_base_stepsizes, 
+                alphas, 
+                base_stepsize_multiplier
+        ):
+            od['pmd_fa_type'] = fa_type
+            od['pmd_policy_divergence'] = policy_dvg
+            od['pmd_pe_stepsize_base'] = pe_base_stepsize
+            od['pmd_pe_alpha'] = pe_alpha
+
+            for base_stepsize in base_stepsizes:
+                od['pmd_stepsize_base'] = base_stepsize * base_mult
+
+                setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+                od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+                if not(os.path.exists(od["log_folder"])):
+                    os.makedirs(od["log_folder"])
+                with open(setting_fname, 'w', encoding='utf-8') as f:
+                    json.dump(od, f, ensure_ascii=False, indent=4)
+                ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -100,20 +100,30 @@ def main(params, output={}):
     else:
         output[params['seed']] = alg.learn(params["max_steps"])
 
-def run_main_multiprocessing(alg, env_name, num_start, num_end, params):
-    num_exp = num_end - num_start
+def main_with_open_settings(settings_file):
+    if len(settings_file) > 5 and settings_file[-len('.json'):] == '.json':
+        with open(settings_file, "r") as fp:
+            params = json.load(fp)
+    else:
+        raise Exception("No valid json file %s passed in" % args.settings)
+
+    main(params)
+
+def run_main_multiprocessing(settings_folder, run_start, run_end):
+    num_exp = run_end-run_start
     assert num_exp >= 1
     num_proc = mp.cpu_count()
     num_threads = min(num_proc, num_exp)
     procs = []
 
-    for i in range(num_start, num_end):
+    for i in range(run_start, run_end):
         if len(procs) == num_threads:
             for p in procs:
                 p.join()
             procs = []
 
-        p = mp.Process(target=main, args=(alg, env_name, i, params))
+        settings_file = os.path.join(settings_folder, "run_%i.json" % i)
+        p = mp.Process(target=main_with_open_settings, args=(settings_file,))
         p.start()
         procs.append(p)
 
@@ -170,27 +180,20 @@ if __name__ == "__main__":
     parser.add_argument("--sgd_alpha", type=float, default=0.0001, help="Regularization strength")
 
     parser.add_argument("--ppo_clip_range", type=float, default=0.2, help="PPO clip range (negative value goes to inf)")
+    """
 
     parser.add_argument('--parallel', action="store_true", help="Use multiprocessing")
-    parser.add_argument('--parallel_runs', type=int, default=10, help="Number of parallel runs")
+    parser.add_argument('--run_start', type=int, help="Which seed to start with")
+    parser.add_argument('--run_end', type=int, help="Which seed to end with (exclusive)")
 
-    """
     args = parser.parse_args()
 
-    if len(args.settings) > 5 and args.settings[-len('.json'):] == '.json':
-        with open(args.settings, "r") as fp:
-            params = json.load(fp)
+    if args.parallel:
+        if(args.run_start is None or args.run_end is None):
+            raise Exception("Must pass in `run_start` and `run_end` for parallel")
+        if(args.run_start > args.run_end):
+            raise Exception("Invalid `run_start`; must be no greater than `run_end`")
 
-        # settings, valid_hyperparams  = create_and_validate_settings(settings)
-        # if not valid_hyperparams:
-        #     exit(0)
+        run_main_multiprocessing(args.settings, args.run_start, args.run_end)
     else:
-        raise Exception("No valid json file %s passed in" % args.settings)
-
-    main(params)
-
-    # if settings.parallel:
-    #     run_main_multiprocessing(args.alg, args.env_name, args.seed, args.seed+args.parallel_runs, settings)
-    # else:
-        # no seeding yet
-    #     main(args.alg, args.env_name, args.seed, settings)
+        main_with_open_settings(args.settings)
