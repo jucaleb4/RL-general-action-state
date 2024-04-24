@@ -141,7 +141,7 @@ class LinearFunctionApproximator(FunctionApproximator):
         self.model.partial_fit(self.featurize([X[0]]), [0])
     
     def featurize(self, X):
-        return self.featurizer.transform(X)
+        return self.featurizer.transform(X).astype('float64')
     
     def predict(self, x, i=None):
         features = self.featurize(x)
