@@ -14,7 +14,7 @@ from rl import RLAlg
 
 import numpy as np
 
-class PPO(RLAlg):
+class DQN(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
 
@@ -28,7 +28,7 @@ class PPO(RLAlg):
             max_episodes=max_episodes, 
             verbose=1
         )
-        model = sb3.DQN("MlpPolicy", env, verbose=1)
+        model = sb3.DQN("MlpPolicy", self.env, verbose=1)
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()

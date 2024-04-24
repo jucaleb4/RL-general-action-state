@@ -82,28 +82,35 @@ def main(params, output={}):
 
     params['log_file'] = os.path.join(params['log_folder'], "seed=%s.csv" % params['seed'])
 
-    alg = params['alg']
-    if alg == "pmd" and params["pmd_fa_type"] == "none":
+    alg_name = params['alg']
+    if alg_name == "pmd" and params["pmd_fa_type"] == "none":
         alg = PMDFiniteStateAction(env, params)
-    elif alg == "pmd":
+    elif alg_name == "pmd":
         assert params["pmd_fa_type"] != "none" and act_is_finite, \
         "PMD cannot use neural network with general actions; run PDA instead"
         alg = PMDGeneralStateFiniteAction(env, params)
-    elif alg == "pda":
+    elif alg_name == "pda":
         alg = PDAGeneralStateAction(env, params)
-    elif alg == "qlearn":
+    elif alg_name == "qlearn":
         from rl import QLearn
         alg = QLearn(env, params)
-    elif alg == "ppo":
+    elif alg_name == "dqn":
+        from rl.dqn import DQN
+        alg = DQN(env, params)
+    elif alg_name == "ppo":
         from rl.ppo import PPO
         alg = PPO(env, params)
     else:
         return 
 
-    if alg in ["pmd", "pda"]:
-        output[params['seed']] = alg.learn(params["max_iters"])
+    if alg_name in ["pmd", "pda"]:
+        # output[params['seed']] = alg.learn(params["max_iters"])
+        alg.learn(params["max_iters"])
+    elif alg_name == "qlearn":
+        alg._learn(params["max_steps"], max_episodes=params["max_steps"])
     else:
-        output[params['seed']] = alg.learn(params["max_steps"])
+        # output[params['seed']] = alg.learn(params["max_steps"])
+        alg.learn(params["max_steps"])
 
 def main_with_open_settings(settings_file):
     if len(settings_file) > 5 and settings_file[-len('.json'):] == '.json':

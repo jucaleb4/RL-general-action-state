@@ -6,8 +6,8 @@ from collections import OrderedDict
 import json
 
 DATE = "04_23_2024"
-EXP_ID = 0
-MAX_RUNS = 18
+EXP_ID = 1
+MAX_RUNS = 6
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -86,39 +86,21 @@ def setup_setting_files(seed, max_steps):
 
     # PDA Lunar_lander with nn 
     env_names = ['GridWorld-v0', 'LunarLander-v2']
-    base_stepsize_multiplier_0 = [1,0.1]
-    fa_types = ['linear', 'nn', 'nn']
-    pe_base_stepsizes = [0.01, 0.001, 0.0001]
-    alphas = [1e-4, 0, 0]
-    policy_dvgs = ['kl', 'kl', 'tsallis']
-    base_stepsizes = [10,1,0.1]
-    base_stepsize_multiplier = [0.1, 1, 1]
+    # algs = ['ppo', 'dqn', 'qlearn']
+    algs = ['ppo', 'dqn'] # qlearn takes too long
 
-    od['pmd_stepsize_type'] = 'pda_1'
-    for env_name, base_mult_0 in zip(env_names, base_stepsize_multiplier_0):
+    for env_name in env_names:
         od['env_name'] = env_name
-        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, base_mult in zip(
-                fa_types, 
-                policy_dvgs, 
-                pe_base_stepsizes, 
-                alphas, 
-                base_stepsize_multiplier
-        ):
-            od['pmd_fa_type'] = fa_type
-            od['pmd_policy_divergence'] = policy_dvg
-            od['pmd_pe_stepsize_base'] = pe_base_stepsize
-            od['pmd_pe_alpha'] = pe_alpha
+        for alg in algs:
+            od['alg'] = alg
 
-            for base_stepsize in base_stepsizes:
-                od['pmd_stepsize_base'] = base_stepsize * base_mult * base_mult_0
-
-                setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-                od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-                if not(os.path.exists(od["log_folder"])):
-                    os.makedirs(od["log_folder"])
-                with open(setting_fname, 'w', encoding='utf-8') as f:
-                    json.dump(od, f, ensure_ascii=False, indent=4)
-                ct += 1
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
