@@ -139,9 +139,9 @@ class Rollout:
         self.r_raw_batch[self.time_ct] = r_raw
         self.time_ct += 1
 
-        # self.curr_ep_cum_rwd = r_raw + self.gamma*self.curr_ep_cum_rwd
-        # self.curr_ep_cum_rwd += (self.gamma**self.curr_ep_len) * r_raw
-        self.curr_ep_cum_rwd += r_raw
+        # NEW: For discounted reward
+        self.curr_ep_cum_rwd += (self.gamma**self.curr_ep_len) * r_raw
+        # self.curr_ep_cum_rwd += r_raw
         self.curr_ep_len += 1
 
         if done:
