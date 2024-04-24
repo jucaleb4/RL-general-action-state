@@ -85,6 +85,7 @@ def setup_setting_files(seed, max_steps):
 
     # PDA Lunar_lander with nn 
     env_names = ['GridWorld-v0', 'LunarLander-v2']
+    base_stepsize_multiplier_0 = [1,0.1]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.0001]
     alphas = [1e-4, 0, 0]
@@ -93,7 +94,7 @@ def setup_setting_files(seed, max_steps):
     base_stepsize_multiplier = [0.1, 1, 1]
 
     od['pmd_stepsize_type'] = 'pda_1'
-    for env_name in env_names:
+    for env_name, base_mult_0 in zip(env_names, base_stepsize_multiplier_0):
         od['env_name'] = env_name
         for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, base_mult in zip(
                 fa_types, 
@@ -108,7 +109,7 @@ def setup_setting_files(seed, max_steps):
             od['pmd_pe_alpha'] = pe_alpha
 
             for base_stepsize in base_stepsizes:
-                od['pmd_stepsize_base'] = base_stepsize * base_mult
+                od['pmd_stepsize_base'] = base_stepsize * base_mult * base_mult_0
 
                 setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
                 od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
