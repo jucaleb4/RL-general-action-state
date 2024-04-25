@@ -150,6 +150,12 @@ class ACFastGradDescent(Optimizer):
         # warnings.warn(f"Detected non-convex function (res: {linearization_diff:.4e})")
 
     def line_search_eta(self, first_eta=-1):
+        """
+        Line search for $\eta$ so that
+        \begin{align*}
+            \frac{\beta}{4(1-\beta)L} \leq \eta \leq \frac{1}{3L}
+        \end{align*}
+        """
         eta = self._first_eta if self._first_eta > 0 else 1
         tau_t = 0
 
@@ -160,7 +166,7 @@ class ACFastGradDescent(Optimizer):
         phase_I_incr = ...
 
         while 1:
-            z = self._y - eta*self._grad
+            z = self.projection(self._y - eta*self._grad)
             y = (1-self.beta)*self._y + self.beta*z
             next_x = (z + tau_t*self._x)/(1.+tau_t)
             next_grad = self.oracle.df(next_x)

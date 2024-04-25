@@ -2,9 +2,11 @@
 from abc import abstractmethod
 
 import warnings 
+import os
 
 import numpy as np
 import numpy.linalg as la
+import matplotlib.pyplot as plt
 
 import torch
 
@@ -61,7 +63,7 @@ class PDAGeneralStateAction(FOPO):
             )
 
         self.mu_Q = 0
-        self.mu_d = params["pmd_mu_h"] - self.mu_Q
+        self.mu_d = abs(params["pmd_mu_h"] - self.mu_Q)
         self.sampling_grad = []
         self.has_warned_about_nonconvex = False
 
@@ -107,11 +109,12 @@ class PDAGeneralStateAction(FOPO):
         $(\sum_{t=0}^k \beta_t)^{-1}$.
         """
         if not self.updated_at_least_once:
-            # return self.projection(self.pi_0)
-            return self.projection(self.pi_0 + np.random.normal(size=len(self.pi_0), scale=1e-1))
+            return self.projection(self.pi_0)
+            # return self.projection(self.pi_0 + np.random.normal(size=len(self.pi_0), scale=1e-1))
 
         s_ = np.copy(s)
         warm_start = True
+        just_updated_policy = self.just_updated_policy
         if self.just_updated_policy:
             self.sampling_grad = []
             self.mu_Q = 0.
@@ -151,6 +154,10 @@ class PDAGeneralStateAction(FOPO):
                         + bregman_scale*0.5*la.norm(a-self.pi_0)**2
             df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)), idxs)[len(s_):]  \
                         + bregman_scale*(a-self.pi_0)
+            # xs = np.linspace(-3,3,100)
+            # plt.plot(xs, [f(x) for x in xs])
+            # plt.title("bregman scale=%.2e" % bregman_scale)
+            # plt.show()
             oracle = BlackBox(f, df)
 
             # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
@@ -159,14 +166,44 @@ class PDAGeneralStateAction(FOPO):
                 np.copy(self.pi_0), # a_0, 
                 self.projection,
                 alpha=0.0, 
-                tol=1e-3 * tol_scale,
+                tol=1e-1, # 1e-3 * tol_scale,
                 stop_nonconvex=self.params['pda_stop_nonconvex'],
                 first_eta=self._first_eta
             )
 
-            max_iter = 1_000 # 100 if warm_start else 1_000
+            max_iter = 10
+            if just_updated_policy or self._last_state_done:
+                max_iter = 10_000 
+            # max_iter = 10 # 100 if warm_start else 1_000
 
-            a_hat, _, grad_hist = opt.solve(n_iter=max_iter)
+            a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
+            if just_updated_policy:
+                plt.style.use('ggplot')
+                fig, axes = plt.subplots(ncols=2,nrows=2)
+                xs = np.linspace(-3,3,100,endpoint=True)
+                axes[0,0].plot(xs, [f(x) for x in xs])
+                axes[0,1].plot(xs, [la.norm(df(x)) for x in xs])
+                axes[0,0].set(
+                    xlabel="x",
+                    ylabel='f(x)',
+                )
+                axes[0,0].set_title("f at %s" % s, fontsize=8)
+                axes[0,1].set(
+                    xlabel="x",
+                    ylabel=r"$\nabla f(x)$",
+                )
+
+                axes[1,0].plot(f_hist)
+                axes[1,1].plot(grad_hist)
+                axes[1,0].set(title="Convergence of f")
+                axes[1,1].set(title="Convergence of gradient", yscale='log')
+                plt.tight_layout()
+
+                pic_name = os.path.join("plots", "iter=%i.png" % self.t)
+                plt.savefig(pic_name)
+                # plt.show()
+            
+            # import ipdb; ipdb.set_trace()
             self._first_eta = opt.first_eta
             self.sampling_grad.append(grad_hist[-1])
 

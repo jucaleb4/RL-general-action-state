@@ -170,7 +170,7 @@ class FOPO(RLAlg):
         elif self.params["pmd_stepsize_type"] == "pda_2":
             beta_t = self.t+1
             k = self.params["max_iters"]
-            lam_t = k *(k+1)/stepsize_base
+            lam_t = k *(k+1) * self.mu_d
         # elif self.params["stepsize"] == "adapt_decreasing":
         #     Q_inf = abs(self.emp_Q_max_arr[-1])
         #     tQ_inf_sq = self.stoch_Q_second_moment()
