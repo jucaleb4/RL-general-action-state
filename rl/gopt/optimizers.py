@@ -15,11 +15,12 @@ class Optimizer(ABC):
     """ 
     Convex smooth optimization 
     """
-    def __init__(self, oracle, x_init, n_iter, tol, **kwargs):    
+    def __init__(self, oracle, x_init, projection, n_iter, tol, **kwargs):    
         self.oracle = oracle
         self.n_iter = n_iter
         self.tol = tol
         self._x = np.copy(x_init)
+        self.projection = projection
         self._f = self.oracle.f(self._x)
         self._grad = np.copy(self.oracle.df(self._x))
         self.early_stop = False
@@ -96,8 +97,8 @@ class AccGradDescent(Optimizer):
         self._grad = self.oracle.df(self._x)
 
 class ACFastGradDescent(Optimizer):
-    def __init__(self, oracle, x_init, alpha, n_iter=100, tol=1e-10, stop_nonconvex=False, **kwargs):    
-        super().__init__(oracle, x_init, n_iter, tol, **kwargs)
+    def __init__(self, oracle, x_init, projection, alpha, n_iter=100, tol=1e-10, stop_nonconvex=False, **kwargs):    
+        super().__init__(oracle, x_init, projection, n_iter, tol, **kwargs)
         assert 0<=alpha<=1.
 
         self._z = np.copy(self._x)
@@ -134,7 +135,7 @@ class ACFastGradDescent(Optimizer):
             self.tau_t = self.tau_prev_t + self.alpha/2 
             self.tau_t += 2*(1-self.alpha)*self.eta_t * self.L_t/(self.beta * self.tau_prev_t)
 
-        self._z = self._y - self.eta_t*self._grad
+        self._z = self.projection(self._y - self.eta_t*self._grad)
         self._y = (1-self.beta)*self._y + self.beta*self._z
         next_x = (self._z + self.tau_t*self._x)/(1.+self.tau_t)
         next_f = self.oracle.f(next_x)
@@ -215,6 +216,6 @@ class ACFastGradDescent(Optimizer):
             L = 0
         else:
             self._detected_nonconvex = True
-            L = la.norm(self._grad - next_grad)**2/(2*abs(linearization_diff))
+            L = 0
 
         return L

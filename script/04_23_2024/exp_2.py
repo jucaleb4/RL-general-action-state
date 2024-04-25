@@ -6,7 +6,7 @@ from collections import OrderedDict
 import json
 
 DATE = "04_23_2024"
-EXP_ID = 0
+EXP_ID = 2
 MAX_RUNS = 18
 
 def parse_sub_runs(sub_runs):
@@ -39,7 +39,7 @@ def create_settings_and_logs_folders(od):
 
 def setup_setting_files(seed, max_steps):
     od = OrderedDict([
-        ('alg', 'pmd'),
+        ('alg', 'pda'),
         ('env_name', 'LunarLander-v2'),
         ('lunar_perturbed', False),
         ('seed', seed),
@@ -51,7 +51,7 @@ def setup_setting_files(seed, max_steps):
         ('gamma', 0.99),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
-        ('pmd_stepsize_type', 'pmd'),
+        ('pmd_stepsize_type', 'pda_2'),
         ('pmd_stepsize_base', 1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
@@ -68,6 +68,8 @@ def setup_setting_files(seed, max_steps):
         ('pmd_max_grad_norm', 1),
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
+        ('pda_subprob_proj', False),
+        ('pda_stop_nonconvex', True),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),
@@ -85,40 +87,25 @@ def setup_setting_files(seed, max_steps):
     ct = 0
 
     # PDA Lunar_lander with nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v2']
-    base_stepsize_multiplier_0 = [1,0.1]
-    fa_types = ['linear', 'nn', 'nn']
-    pe_base_stepsizes = [0.01, 0.001, 0.001]
-    alphas = [1e-4, 0, 0]
-    policy_dvgs = ['kl', 'kl', 'tsallis']
-    base_stepsizes = [10,1,0.1]
-    base_stepsize_multiplier = [0.1, 1, 1]
+    env_names = ['InvertedPendulum-v4',]
+    use_projs = [True,]
+    stop_noncvxs = [True, False, False]
+    base_stepsizes = [1,1,0.1]
 
-    od['pmd_stepsize_type'] = 'pda_1'
-    for env_name, base_mult_0 in zip(env_names, base_stepsize_multiplier_0):
+    for env_name, use_proj in zip(env_names, use_projs):
         od['env_name'] = env_name
-        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, base_mult in zip(
-                fa_types, 
-                policy_dvgs, 
-                pe_base_stepsizes, 
-                alphas, 
-                base_stepsize_multiplier
-        ):
-            od['pmd_fa_type'] = fa_type
-            od['pmd_policy_divergence'] = policy_dvg
-            od['pmd_pe_stepsize_base'] = pe_base_stepsize
-            od['pmd_pe_alpha'] = pe_alpha
+        od['pda_subprob_proj'] = use_proj
+        for base_stepsize, stop_noncvx in zip(base_stepsizes, stop_noncvxs):
+            od['pmd_stepsize_base'] = base_stepsize 
+            od['pda_stop_nonconvex'] = stop_noncvx
 
-            for base_stepsize in base_stepsizes:
-                od['pmd_stepsize_base'] = base_stepsize * base_mult * base_mult_0
-
-                setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-                od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-                if not(os.path.exists(od["log_folder"])):
-                    os.makedirs(od["log_folder"])
-                with open(setting_fname, 'w', encoding='utf-8') as f:
-                    json.dump(od, f, ensure_ascii=False, indent=4)
-                ct += 1
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

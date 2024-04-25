@@ -409,12 +409,32 @@ class NNFunctionApproximator(FunctionApproximator):
 
         return last_loss
 
-    def grad(self, X, max_grad_norm=np.inf, i=0):
+    def grad(self, X, i_s, max_grad_norm=np.inf):
         """ 
         https://discuss.pytorch.org/t/newbie-getting-the-gradient-with-respect-to-the-input/12709/6
         """
+
+        # https://stackoverflow.com/questions/64988010/getting-the-outputs-grad-with-respect-to-the-input
+        # TODO: Use torch.autograd.grad(outputs=Y_pred, inputs=X_, retain_graph=True)
+        X_ = torch.from_numpy(X).to(self.device).float()
+        X_.requires_grad = True
+        X_.retain_grad()
+        Y_pred = self.model(X_)
+        i_s = torch.from_numpy(i_s).long()
+        if len(i_s.shape) == 1:
+            i_s_2d = i_s.long().unsqueeze(-1)
+        else:
+            i_s_2d = i_s.long()
+
+        i_s_2d, Y_pred = torch.broadcast_tensors(i_s_2d, Y_pred)
+        i_s_2d = i_s_2d[..., :1]
+        y = Y_pred.gather(-1, i_s_2d).squeeze(1)
+        y.backward(torch.ones_like(y)) 
+        grad_X = np.squeeze(X_.grad.numpy())
+
+        """
         grad_X = []
-        for j, X_j in enumerate(X):
+        for j, X_j, i_j in enumerate(zip(X, i_s)):
             X_j = torch.from_numpy(X_j).to(self.device).float()
             X_j.requires_grad = True
             # TODO: Better way to remove this?
@@ -424,8 +444,10 @@ class NNFunctionApproximator(FunctionApproximator):
             grad_X.append(X_j.grad.numpy())
 
         grad_X = np.squeeze(np.array(grad_X))
+        """
+
         scale = 1
-        if  max_grad_norm < np.inf:
+        if max_grad_norm < np.inf:
             grad_norm = np.max(np.abs(grad_X))
             scale = max(1, max_grad_norm/(grad_norm+1e-10))
         return scale * grad_X

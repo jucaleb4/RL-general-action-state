@@ -170,7 +170,7 @@ class FOPO(RLAlg):
         elif self.params["pmd_stepsize_type"] == "pda_2":
             beta_t = self.t+1
             k = self.params["max_iters"]
-            lam_t = k * (k+1)/stepsize_base
+            lam_t = k *(k+1)/stepsize_base
         # elif self.params["stepsize"] == "adapt_decreasing":
         #     Q_inf = abs(self.emp_Q_max_arr[-1])
         #     tQ_inf_sq = self.stoch_Q_second_moment()
@@ -813,8 +813,6 @@ class PMDGeneralStateFiniteAction(FOPO):
             alpha_1 = self.prev_beta_sum/self.curr_beta_sum
             alpha_2 = beta_t/self.curr_beta_sum
 
-        train_loss = 0
-        test_loss = 0
         y        = self._last_y 
         # y        = self.fa_Q.predict(X_i)[:,i]
         Q_acc_pred = self.fa_Q_accum.predict(self._last_s_visited, self._last_a_visited)
