@@ -84,7 +84,7 @@ def setup_setting_files(max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
-    # PDA Lunar_lander with nn 
+    # PDA Lunar_lander with rkhs and nn 
     env_names = ['GridWorld-v0', 'LunarLander-v2']
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
@@ -108,6 +108,21 @@ def setup_setting_files(max_trials, max_steps):
             od['pmd_pe_stepsize_base'] = pe_base_stepsize
             od['pmd_pe_alpha'] = pe_alpha
             od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
+
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
+
+    # SB3
+    algs = ['ppo', 'dqn']
+    for env_name in env_names:
+        od['env_name'] = env_name
+        for alg in algs:
+            od['alg'] = alg
 
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
@@ -141,7 +156,7 @@ if __name__ == "__main__":
         max_steps = 500_000
         if args.mode == "work":
             max_steps = 10_000
-            max_trials = 1
+            max_trials = 2
 
         setup_setting_files(max_trials, max_steps)
     else:
