@@ -113,13 +113,20 @@ def main(params, output={}):
         alg.learn(params["max_steps"])
 
 def main_with_open_settings(settings_file):
+    """
+    Loads the settings file and then runs the number of requested trials.
+    """
     if len(settings_file) > 5 and settings_file[-len('.json'):] == '.json':
         with open(settings_file, "r") as fp:
             params = json.load(fp)
     else:
         raise Exception("No valid json file %s passed in" % args.settings)
 
-    main(params)
+    seed_0 = params['seed']
+    max_trials = params['max_trials']
+    for seed in range(seed_0, seed_0+max_trials):
+        params['seed'] = seed
+        main(params)
 
 def run_main_multiprocessing(settings_folder, run_start, run_end):
     num_exp = run_end-run_start

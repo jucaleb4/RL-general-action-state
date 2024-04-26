@@ -44,7 +44,7 @@ def setup_setting_files(seed, max_steps):
         ('lunar_perturbed', False),
         ('seed', seed),
         ('parallel', False),
-        ('trials', 1),
+        ('max_trials', 1),
         ('max_iters', 100),
         ('max_episodes', 10_000),
         ('max_steps', max_steps),

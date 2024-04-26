@@ -43,6 +43,7 @@ class PPO(RLAlg):
             clip_range=clip_range,
             max_grad_norm=max_grad_norm,
             normalize_advantage=self.params["ppo_normalize_adv"],
+            seed=params["seed"]
         )
         model.learn(max_iters, callback=callback_max_episodes)
 

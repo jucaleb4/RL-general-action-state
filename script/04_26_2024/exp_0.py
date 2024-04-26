@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_23_2024"
-EXP_ID = 2
-MAX_RUNS = 18
+DATE = "04_26_2024"
+EXP_ID = 0
+MAX_RUNS = 10
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -37,21 +37,21 @@ def create_settings_and_logs_folders(od):
         if not(os.path.exists(log_folder_base)):
             os.makedirs(log_folder_base)
 
-def setup_setting_files(seed, max_steps):
+def setup_setting_files(max_trials, max_steps):
     od = OrderedDict([
-        ('alg', 'pda'),
+        ('alg', 'pmd'),
         ('env_name', 'LunarLander-v2'),
         ('lunar_perturbed', False),
-        ('seed', seed),
+        ('seed', 0),
         ('parallel', False),
-        ('max_trials', 1),
-        ('max_iters', 100),
-        ('max_episodes', 10_000),
+        ('max_trials', max_trials),
+        ('max_iters', max_steps),
+        ('max_episodes', max_steps),
         ('max_steps', max_steps),
         ('gamma', 0.99),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
-        ('pmd_stepsize_type', 'pda_2'),
+        ('pmd_stepsize_type', 'pmd'),
         ('pmd_stepsize_base', 1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
@@ -68,8 +68,6 @@ def setup_setting_files(seed, max_steps):
         ('pmd_max_grad_norm', 1),
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
-        ('pda_subprob_proj', False),
-        ('pda_stop_nonconvex', True),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),
@@ -87,17 +85,29 @@ def setup_setting_files(seed, max_steps):
     ct = 0
 
     # PDA Lunar_lander with nn 
-    env_names = ['InvertedPendulum-v4',]
-    use_projs = [True,]
-    stop_noncvxs = [True, False, False]
-    base_stepsizes = [1,1,0.1]
+    env_names = ['GridWorld-v0', 'LunarLander-v2']
+    fa_types = ['linear', 'nn', 'nn']
+    pe_base_stepsizes = [0.01, 0.001, 0.001]
+    alphas = [1e-4, 0, 0]
+    policy_dvgs = ['kl', 'kl', 'tsallis']
+    env_step_multipliers = [0.1,1]
+    alg_step_multipliers = [0.1,1,1]
 
-    for env_name, use_proj in zip(env_names, use_projs):
+    od['pmd_stepsize_type'] = 'pda_1'
+    for env_name, env_step_mult in zip(env_names, env_step_multipliers):
         od['env_name'] = env_name
-        od['pda_subprob_proj'] = use_proj
-        for base_stepsize, stop_noncvx in zip(base_stepsizes, stop_noncvxs):
-            od['pmd_stepsize_base'] = base_stepsize 
-            od['pda_stop_nonconvex'] = stop_noncvx
+        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
+                fa_types, 
+                policy_dvgs, 
+                pe_base_stepsizes,
+                alphas, 
+                alg_step_multipliers,
+        ):
+            od['pmd_fa_type'] = fa_type
+            od['pmd_policy_divergence'] = policy_dvg
+            od['pmd_pe_stepsize_base'] = pe_base_stepsize
+            od['pmd_pe_alpha'] = pe_alpha
+            od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
 
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
@@ -124,16 +134,16 @@ if __name__ == "__main__":
         help="Which experiments to run. Must be given as two integers separate by a comma with no space"
     )
     args = parser.parse_args()
-    seed_0 = 0
 
     if args.setup:
         # TODO: Do we need to change this?
-        seed = 0
-        max_steps = 200_000
+        max_trials = 10
+        max_steps = 500_000
         if args.mode == "work":
             max_steps = 10_000
+            max_trials = 1
 
-        setup_setting_files(seed, max_steps)
+        setup_setting_files(max_trials, max_steps)
     else:
         start_run_id, end_run_id = parse_sub_runs(args.sub_runs)
         folder_name = os.path.join("settings", DATE, 'exp_%i' % EXP_ID)
