@@ -37,12 +37,12 @@ def create_settings_and_logs_folders(od):
         if not(os.path.exists(log_folder_base)):
             os.makedirs(log_folder_base)
 
-def setup_setting_files(max_trials, max_steps):
+def setup_setting_files(seed_0, max_trials, max_steps):
     od = OrderedDict([
         ('alg', 'pmd'),
         ('env_name', 'LunarLander-v2'),
         ('lunar_perturbed', False),
-        ('seed', 0),
+        ('seed', seed_0),
         ('parallel', False),
         ('max_trials', max_trials),
         ('max_iters', max_steps),
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         "--mode", 
         type=str, 
         default="work", 
-        choices=["validate", "work"],
+        choices=["full", "validate", "work"],
         help="Set up number of trials and max_step for various testing reasons"
     )
     parser.add_argument(
@@ -150,15 +150,20 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    seed_0 = 0
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
         max_steps = 500_000
+        if args.mode == "full":
+            seed_0 = 1
+        if args.mode == "validate":
+            max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
             max_trials = 2
 
-        setup_setting_files(max_trials, max_steps)
+        setup_setting_files(seed_0, max_trials, max_steps)
     else:
         start_run_id, end_run_id = parse_sub_runs(args.sub_runs)
         folder_name = os.path.join("settings", DATE, 'exp_%i' % EXP_ID)
