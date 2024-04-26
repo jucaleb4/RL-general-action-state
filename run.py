@@ -97,6 +97,9 @@ def main(params, output={}):
     elif alg_name == "dqn":
         from rl.dqn import DQN
         alg = DQN(env, params)
+    elif alg_name == "ddpg":
+        from rl.ddpg import DDPG
+        alg = DDPG(env, params)
     elif alg_name == "ppo":
         from rl.ppo import PPO
         alg = PPO(env, params)
