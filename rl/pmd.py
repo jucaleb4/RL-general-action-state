@@ -118,7 +118,7 @@ class FOPO(RLAlg):
 
             if done:
                 self.n_episodes += 1
-                if self.n_episodes == self.max_episodes or self.n_step == self.max_steps:
+                if self.n_episodes >= self.max_episodes or self.n_step >= self.max_steps:
                     return 
                 s, _ = self.env.reset()
                 next_s = s
