@@ -28,13 +28,13 @@ class DQN(RLAlg):
             max_episodes=max_episodes, 
             verbose=1
         )
-        model = sb3.DQN("MlpPolicy", self.env, verbose=1, seed=params['seed'])
+        model = sb3.DQN("MlpPolicy", self.env, verbose=1, seed=self.params['seed'])
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()
-        time_arr = self.env.get_episode_times() 
-        print(f"Runtime: {np.sum(time_arr):.2f}s")
+        # time_arr = self.env.get_episode_times() 
+        # print(f"Runtime: {np.sum(time_arr):.2f}s")
 
         log_file = os.path.join(self.params['log_folder'], "seed=%i.csv" % self.params['seed'])
         self.save_episode_rewards(log_file, rwd_arr, len_arr)

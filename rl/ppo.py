@@ -43,14 +43,14 @@ class PPO(RLAlg):
             clip_range=clip_range,
             max_grad_norm=max_grad_norm,
             normalize_advantage=self.params["ppo_normalize_adv"],
-            seed=params["seed"]
+            seed=self.params["seed"]
         )
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()
-        time_arr = self.env.get_episode_times() 
-        print(f"Runtime: {np.sum(time_arr):.2f}s")
+        # time_arr = self.env.get_episode_times() 
+        # print(f"Runtime: {np.sum(time_arr):.2f}s")
 
         log_file = os.path.join(self.params['log_folder'], "seed=%i.csv" % self.params['seed'])
         self.save_episode_rewards(log_file, rwd_arr, len_arr)
