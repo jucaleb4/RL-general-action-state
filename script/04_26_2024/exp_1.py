@@ -39,7 +39,7 @@ def create_settings_and_logs_folders(od):
 
 def setup_setting_files(seed_0, max_trials, max_steps):
     od = OrderedDict([
-        ('alg', 'pmd'),
+        ('alg', 'pda'),
         ('env_name', 'InvertedPendulum-v4'),
         ('lunar_perturbed', False),
         ('seed', seed_0),
@@ -69,7 +69,9 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
         ('pda_subprob_proj', False),
-        ('pda_stop_nonconvex', True),
+        ('pda_stop_nonconvex', False),
+        ('pda_policy_noise', 1.),
+        ('pda_plot_f', False),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),
@@ -88,6 +90,27 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # PDA Lunar_lander with rkhs and nn 
     env_names = ['InvertedPendulum-v4']
+
+    stepsize_types = ['pda_1', 'pda_2']
+    stepsize_bases = [0.1, 1, 10]
+    n_epochs_list = [10,100]
+    policy_noises = [1.,0.]
+
+    for policy_noise in policy_noises:
+        od['pda_policy_noise'] = policy_noise
+        for n_epochs in n_epochs_list:
+            od['pmd_pe_max_epochs'] = n_epochs
+            for stepsize_base in stepsize_bases:
+                od['pmd_stepsize_base'] = stepsize_base
+                for stepsize_type in stepsize_types:
+                    od['pmd_stepsize_type'] = stepsize_type
+                    setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+                    od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+                    if not(os.path.exists(od["log_folder"])):
+                        os.makedirs(od["log_folder"])
+                    with open(setting_fname, 'w', encoding='utf-8') as f:
+                        json.dump(od, f, ensure_ascii=False, indent=4)
+                    ct += 1
 
     # SB3
     algs = ['ppo', 'ddpg', 'pda']
@@ -126,7 +149,7 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 200_000
+        max_steps = 100_000
         if args.mode == "full":
             seed_0 = 1
         if args.mode == "validate":

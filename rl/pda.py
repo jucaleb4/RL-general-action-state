@@ -108,9 +108,18 @@ class PDAGeneralStateAction(FOPO):
         So we need to ensure the tolerance is also scaled by down by 
         $(\sum_{t=0}^k \beta_t)^{-1}$.
         """
+
+        t = max(1, self.t+1 if hasattr(self, 't') else 1)
+        scale = np.sqrt(float(self.params['pda_policy_noise'])/t)
+        scale = max(scale, 0.01)
+
         if not self.updated_at_least_once:
-            return self.projection(self.pi_0)
-            # return self.projection(self.pi_0 + np.random.normal(size=len(self.pi_0), scale=1e-1))
+            # return self.projection(self.pi_0)
+            return self.projection(self.pi_0 + np.random.normal(
+                loc=0.0,
+                scale=scale,
+                size=len(self.pi_0), 
+            ))
 
         s_ = np.copy(s)
         warm_start = True
@@ -166,31 +175,35 @@ class PDAGeneralStateAction(FOPO):
                 np.copy(self.pi_0), # a_0, 
                 self.projection,
                 alpha=0.0, 
-                tol=1e-1, # 1e-3 * tol_scale,
+                tol=1e-3 * tol_scale,
                 stop_nonconvex=self.params['pda_stop_nonconvex'],
                 first_eta=self._first_eta
             )
 
             max_iter = 10
             if just_updated_policy or self._last_state_done:
-                max_iter = 10_000 
-            # max_iter = 10 # 100 if warm_start else 1_000
-
+                max_iter = 100
             a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
-            if just_updated_policy:
+
+            if self.params['pda_plot_f'] and just_updated_policy:
+                f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)  \
+                            + bregman_scale*0.5*la.norm(a-self.pi_0)**2
+                df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)[len(s_):]  \
+                            + bregman_scale*(a-self.pi_0)
+
                 plt.style.use('ggplot')
                 fig, axes = plt.subplots(ncols=2,nrows=2)
-                xs = np.linspace(-3,3,100,endpoint=True)
-                axes[0,0].plot(xs, [f(x) for x in xs])
-                axes[0,1].plot(xs, [la.norm(df(x)) for x in xs])
+                xs = np.linspace(-3,3,1000,endpoint=True)
+                axes[0,0].plot(xs, [f_0(x) for x in xs])
+                axes[0,1].plot(xs, [la.norm(df_0(x)) for x in xs])
                 axes[0,0].set(
-                    xlabel="x",
-                    ylabel='f(x)',
+                    xlabel="a",
+                    ylabel='f(a)',
                 )
-                axes[0,0].set_title("f at %s" % s, fontsize=8)
+                axes[0,0].set_title("f at 0", fontsize=8)
                 axes[0,1].set(
-                    xlabel="x",
-                    ylabel=r"$\nabla f(x)$",
+                    xlabel="a",
+                    ylabel=r"$\nabla f(a)$",
                 )
 
                 axes[1,0].plot(f_hist)
@@ -202,8 +215,8 @@ class PDAGeneralStateAction(FOPO):
                 pic_name = os.path.join("plots", "iter=%i.png" % self.t)
                 plt.savefig(pic_name)
                 # plt.show()
+                plt.close()
             
-            # import ipdb; ipdb.set_trace()
             self._first_eta = opt.first_eta
             self.sampling_grad.append(grad_hist[-1])
 
@@ -219,7 +232,13 @@ class PDAGeneralStateAction(FOPO):
             else:
                 break
 
-        return a_hat
+        a_hat_noisy = self.projection(a_hat + np.random.normal(
+            loc=0.,
+            scale=scale,
+            size=len(self.pi_0), 
+        ))
+
+        return a_hat_noisy
 
     def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """

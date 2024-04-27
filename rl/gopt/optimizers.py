@@ -51,7 +51,7 @@ class Optimizer(ABC):
             self.step(t)
             f_arr[t-1] = self._f
             grad_arr[t-1] = la.norm(self._grad)
-            if la.norm(self._grad) <= self.tol or self.early_stop:
+            if (la.norm(self._grad) <= self.tol and t >= 10) or self.early_stop:
                 # print(f"Early termination at iteration {t+1}/{n_iter}")
                 f_arr = f_arr[:t]
                 break
