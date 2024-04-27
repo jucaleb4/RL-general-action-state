@@ -7,7 +7,7 @@ import json
 
 DATE = "04_26_2024"
 EXP_ID = 1
-MAX_RUNS = 10
+MAX_RUNS = 24
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
