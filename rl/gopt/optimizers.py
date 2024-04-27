@@ -213,7 +213,8 @@ class ACFastGradDescent(Optimizer):
         :param tol: tolerance for non-convexity/linearization
         """
         if first_iter:
-            return la.norm(next_grad - self._grad)/la.norm(next_x-self._x)
+            # need to add a small value below in case too close ...
+            return la.norm(next_grad - self._grad)/(1e-6 + la.norm(next_x-self._x))
 
         linearization_diff = self._f - next_f - np.dot(next_grad, self._x-next_x)
         if linearization_diff > 0:

@@ -220,9 +220,15 @@ class FOPO(RLAlg):
 
         self.msg += "rollout/\n"
         self.msg += f"  {'itr_ep_len_mean':<{l}}: {np.mean(len_arr_trunc):.2f}\n"
-        self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
+        if np.abs(np.mean(rwd_arr_trunc)) < 1e4:
+            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
+        else:
+            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2e}\n"
         self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_episodes-self.last_iter_ep)}\n"
-        self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
+        if np.abs(moving_avg) < 1e4:
+            self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
+        else:
+            self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2e}\n"
 
         self.msg += "time/\n"
         self.msg += f"  {'itr':<{l}}: {self.t}\n"
