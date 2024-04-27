@@ -23,6 +23,8 @@ from rl.utils import get_space_property
 from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
+from rl.utils import safe_mean
+from rl.utils import safe_std
 
 from rl.gopt import ACFastGradDescent
 from rl.gopt import BlackBox
@@ -91,22 +93,22 @@ class PDAGeneralStateAction(FOPO):
         Sample via AC-FGM 
 
         We sample according to
-        \[
-            \min_{a \in A} { \sum_{t=0}^k \beta_t Q(s,a;theta_t) + \lambda_k D(\pi_0(s),a) }
-        \]
+        $$
+            min_{a in A} { sum_{t=0}^k beta_t Q(s,a;theta_t) + lambda_k D(pi_0(s),a) }
+        $$
 
-        by scaling down by $(\sum_{t=0}^k \beta_t)^{-1}$ and solving the equivalent problem
+        by scaling down by $(sum_{t=0}^k beta_t)^{-1}$ and solving the equivalent problem
 
-        \[
-            \min_{a \in A} { Q^k(s,a;theta_{[k]}) + (\lambda_k/\sum_{t=0}^k \beta_t) D(\pi_0(s),a) }
-        \]
+        $$
+            min_{a in A} { Q^k(s,a;theta_{[k]}) + (lambda_k/sum_{t=0}^k beta_t) D(pi_0(s),a) }
+        $$
 
-        where $Q^k(s,a;theta_{[k]}) := (\sum_{t=0}^k \beta_t)^{-1} \sum_{t=0}^k \beta_t Q(s,a;\theta_t)$.
+        where $Q^k(s,a;theta_{[k]}) := (sum_{t=0}^k beta_t)^{-1} sum_{t=0}^k beta_t Q(s,a;theta_t)$.
         And recall the neural network fa_Q_acc learnes $Q^k(s,a;theta_{[k]})$, 
         so no additional scaling is needed.
 
         So we need to ensure the tolerance is also scaled by down by 
-        $(\sum_{t=0}^k \beta_t)^{-1}$.
+        $(sum_{t=0}^k beta_t)^{-1}$.
         """
 
         t = max(1, self.t+1 if hasattr(self, 't') else 1)
@@ -273,8 +275,8 @@ class PDAGeneralStateAction(FOPO):
         idxs = np.zeros(shape=(len(y),1))
         train_losses, test_losses = self.fa_Q.update(X, idxs, y, validation_frac=0)
 
-        self.last_pe_loss = np.mean(train_losses)
-        self.last_po_test_loss = np.mean(test_losses)
+        self.last_pe_loss = -1 if len(train_losses) == 0 else np.mean(train_losses)
+        self.last_pe_test_loss = -1 if len(test_losses) == 0 else np.mean(test_losses)
 
     def policy_update(self): 
         self.updated_at_least_once = True
@@ -285,7 +287,7 @@ class PDAGeneralStateAction(FOPO):
         """ 
         Policy update with PMD and Euclidean distance. Solve
 
-        min_\theta{ | Q^k(s,a;\theta) - \bar{\beta}_k^{-1}*[\bar{\beta}_{k-1}*Q^{k-1}(s,a; \theta_{[k-1]}) + Q(s,a; \theta_k) |_2}
+        min_theta{ | Q^k(s,a;theta) - bar{beta}_k^{-1}*[bar{beta}_{k-1}*Q^{k-1}(s,a; theta_{[k-1]}) + Q(s,a; theta_k) |_2}
 
         """
         (beta_t, lam_t) = self.get_stepsize_schedule()
@@ -306,8 +308,8 @@ class PDAGeneralStateAction(FOPO):
             validation_frac=0,
         )
 
-        self.last_po_loss = np.mean(train_losses)
-        self.last_po_test_loss = np.mean(test_losses)
+        self.last_po_loss = -1 if len(train_losses) == 0 else np.mean(train_losses)
+        self.last_po_test_loss = -1 if len(test_losses) == 0 else np.mean(test_losses)
 
         return train_losses, test_losses
 
@@ -383,6 +385,6 @@ class PDAGeneralStateAction(FOPO):
         self.msg += "train/\n"
         self.msg += f"  {'pe_loss':<{l}}: {self.last_pe_loss:.4e}\n"
         self.msg += f"  {'po_loss':<{l}}: {self.last_po_loss:.4e}\n"
-        self.msg += f"  {'sampl_grad_mean':<{l}}: {np.mean(self.sampling_grad):.4e}\n"
-        self.msg += f"  {'sampl_grad_std':<{l}}: {np.std(self.sampling_grad):.4e}\n"
+        self.msg += f"  {'sampl_grad_mean':<{l}}: {safe_mean(self.sampling_grad):.4e}\n"
+        self.msg += f"  {'sampl_grad_std':<{l}}: {safe_std(self.sampling_grad):.4e}\n"
         self.msg += f"  {'mu_d':<{l}}: {self.mu_d:.4e}\n"

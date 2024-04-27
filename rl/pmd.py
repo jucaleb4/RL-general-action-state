@@ -22,6 +22,7 @@ from rl.utils import get_space_cardinality
 from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 from rl.utils import tsallis_policy_update
+from rl.utils import safe_mean
 
 import torch as th
 
@@ -209,21 +210,21 @@ class FOPO(RLAlg):
         if self.params['pmd_sb3_policy']:
             rwd_arr_trunc = [ep_info["r"] for ep_info in self.sb3_policy.ep_info_buffer]
             len_arr_trunc = [ep_info["l"] for ep_info in self.sb3_policy.ep_info_buffer]
-            moving_avg = np.mean(rwd_arr_trunc)
+            moving_avg = safe_mean(rwd_arr_trunc)
         else:
             rwd_arr = self.rollout.get_ep_rwds()
             len_arr = self.rollout.get_ep_lens()
             rwd_arr_trunc = rwd_arr[self.last_iter_ep: self.n_episodes]
             len_arr_trunc = len_arr[self.last_iter_ep: self.n_episodes]
             i = min(25, len(rwd_arr))
-            moving_avg = np.mean(rwd_arr[-i:])
+            moving_avg = safe_mean(rwd_arr[-i:])
 
         self.msg += "rollout/\n"
-        self.msg += f"  {'itr_ep_len_mean':<{l}}: {np.mean(len_arr_trunc):.2f}\n"
-        if np.abs(np.mean(rwd_arr_trunc)) < 1e4:
-            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2f}\n"
+        self.msg += f"  {'itr_ep_len_mean':<{l}}: {safe_mean(len_arr_trunc):.2f}\n"
+        if np.abs(safe_mean(rwd_arr_trunc)) < 1e4:
+            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {safe_mean(rwd_arr_trunc):.2f}\n"
         else:
-            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {np.mean(rwd_arr_trunc):.2e}\n"
+            self.msg += f"  {'itr_ep_rwd_mean':<{l}}: {safe_mean(rwd_arr_trunc):.2e}\n"
         self.msg += f"  {'itr_n_ep':<{l}}: {int(self.n_episodes-self.last_iter_ep)}\n"
         if np.abs(moving_avg) < 1e4:
             self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
@@ -724,15 +725,15 @@ class PMDGeneralStateFiniteAction(FOPO):
         """
         For entropy regularization with strong convexity $mu_h$, PDA has the explicit argmin solution of
         $$
-            \pi_{k+1}(s) 
+            pi_{k+1}(s) 
 
-            \propto exp{ -\sum_{t=0}^k \beta_t \phi(s,*;\theta_t)/(\bar{\beta}_k * \mu_h + \lambda_k) }
+            propto exp{ -sum_{t=0}^k beta_t phi(s,*;theta_t)/(bar{beta}_k * mu_h + lambda_k) }
         $$
         (for argmax, remove negative sign with a positive sign) while PMD has
         $$
-            \pi_{k+1}(s) 
-            \propto exp{ (1+\eta_t*\mu_h)^{-1} * (log(\pi_k(s)) - \eta_t \phi(s,*;\theta_t)) }.
-            \propto exp{ -\sum_{t=0}^k (\pi_{\tau=t}^k (1+\eta_t*\mu_h))^{-1} * \eta_t \phi(s,*\theta_t) }
+            pi_{k+1}(s) 
+            propto exp{ (1+eta_t*mu_h)^{-1} * (log(pi_k(s)) - eta_t phi(s,*;theta_t)) }.
+            propto exp{ -sum_{t=0}^k (pi_{tau=t}^k (1+eta_t*mu_h))^{-1} * eta_t phi(s,*theta_t) }
         $$
         """
         (beta_t, lam_t) = self.get_stepsize_schedule()

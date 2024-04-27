@@ -155,10 +155,10 @@ class ACFastGradDescent(Optimizer):
 
     def line_search_eta(self, first_eta=-1):
         """
-        Line search for $\eta$ so that
-        \begin{align*}
-            \frac{\beta}{4(1-\beta)L} \leq \eta \leq \frac{1}{3L}
-        \end{align*}
+        Line search for $eta$ so that
+        $$
+            frac{beta}{4(1-beta)L} leq eta leq frac{1}{3L}
+        $$
         """
         eta = self._first_eta if self._first_eta > 0 else 1
         tau_t = 0
