@@ -111,7 +111,7 @@ class PDAGeneralStateAction(FOPO):
 
         t = max(1, self.t+1 if hasattr(self, 't') else 1)
         scale = np.sqrt(float(self.params['pda_policy_noise'])/t)
-        scale = max(scale, 0.01)
+        scale = max(scale, self.params['pda_policy_min_noise'])
 
         if not self.updated_at_least_once:
             # return self.projection(self.pi_0)

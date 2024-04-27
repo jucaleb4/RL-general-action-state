@@ -61,7 +61,7 @@ def setup_setting_files(seed, max_steps):
         ('pmd_pe_stepsize_type', 'constant'),
         ('pmd_pe_stepsize_base', 1e-3),
         ('pmd_pe_alpha', 1e-4),
-        ('pmd_pe_max_epochs', 100),
+        ('pmd_pe_max_epochs', 10),
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
