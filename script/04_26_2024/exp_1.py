@@ -7,7 +7,7 @@ import json
 
 DATE = "04_26_2024"
 EXP_ID = 1
-MAX_RUNS = 24
+MAX_RUNS = 26
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -71,7 +71,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pda_subprob_proj', False),
         ('pda_stop_nonconvex', False),
         ('pda_policy_noise', 1.),
-        ('pda_policy_min_noise', 0.01),
+        ('pda_policy_min_noise', 0.0),
         ('pda_plot_f', False),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
@@ -114,7 +114,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
                     ct += 1
 
     # SB3
-    algs = ['ppo', 'ddpg', 'pda']
+    algs = ['ppo', 'ddpg']
     for env_name in env_names:
         od['env_name'] = env_name
         for alg in algs:
