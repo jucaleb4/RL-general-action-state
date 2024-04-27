@@ -850,7 +850,11 @@ class PMDGeneralStateFiniteAction(FOPO):
         empirical mean and variance of observations, actions, and rewards
         """
         old_rollout_len = self.params["pmd_rollout_len"]
-        self.params["pmd_rollout_len"] = max(2048, old_rollout_len)
+        run_rollout = self.params["pmd_normalize_obs"] or self.params["pmd_normalize_rwd"] 
+        if run_rollout:
+            self.params["pmd_rollout_len"] = max(2048, old_rollout_len)
+        else:
+            self.params["pmd_rollout_len"] = 10
         self.collect_rollouts()
         self.params["pmd_rollout_len"] =  old_rollout_len
 

@@ -124,7 +124,11 @@ class ACFastGradDescent(Optimizer):
             self._first_eta = self.eta_t = self.line_search_eta()
             self.tau_t = 0
         elif t == 2:
-            self.eta_t = self.beta/(2*self.L_t)
+            # TODO: This is a hacky solution
+            if self.L_t == 0:
+                self.eta_t = 2*(1-self.beta)*self._first_eta 
+            else:
+                self.eta_t = min(2*(1-self.beta)*self._first_eta, self.beta/(2*self.L_t))
             self.tau_prev_t = self.tau_t
             self.tau_t = 2
         else:
@@ -172,8 +176,9 @@ class ACFastGradDescent(Optimizer):
             next_grad = self.oracle.df(next_x)
 
             L = self.est_L(next_x, ..., next_grad, first_iter=True)
-            if self.stop_nonconvex and self._detected_nonconvex:
-                return 0
+            if L == 0 or (self.stop_nonconvex and self._detected_nonconvex):
+                # TODO: This is a hacky solution
+                return 1./3
 
             lb = self.beta/(4*(1.-self.beta)*L)
             ub = 1./(3*L)
@@ -214,7 +219,7 @@ class ACFastGradDescent(Optimizer):
         """
         if first_iter:
             # need to add a small value below in case too close ...
-            return la.norm(next_grad - self._grad)/(1e-6 + la.norm(next_x-self._x))
+            return la.norm(next_grad - self._grad)/(1e-3 + la.norm(next_x-self._x))
 
         linearization_diff = self._f - next_f - np.dot(next_grad, self._x-next_x)
         if linearization_diff > 0:
