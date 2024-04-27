@@ -86,6 +86,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # PDA Lunar_lander with rkhs and nn 
     env_names = ['GridWorld-v0', 'LunarLander-v2']
+    max_steps_arr = [200_000, 500_000]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
     alphas = [1e-4, 0, 0]
@@ -94,8 +95,9 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     alg_step_multipliers = [0.1,1,1]
 
     od['pmd_stepsize_type'] = 'pda_1'
-    for env_name, env_step_mult in zip(env_names, env_step_multipliers):
+    for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
         od['env_name'] = env_name
+        od['max_steps'] = min(_max_steps, max_steps)
         for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
                 fa_types, 
                 policy_dvgs, 
@@ -156,6 +158,7 @@ if __name__ == "__main__":
         max_trials = 10
         max_steps = 500_000
         if args.mode == "full":
+            max_trials = 9
             seed_0 = 1
         if args.mode == "validate":
             max_trials = 1
