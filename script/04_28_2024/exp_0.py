@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_26_2024"
-EXP_ID = 1
-MAX_RUNS = 26
+DATE = "04_28_2024"
+EXP_ID = 0
+MAX_RUNS = 3
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -51,8 +51,8 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('gamma', 0.99),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
-        ('pmd_stepsize_type', 'pda_1'),
-        ('pmd_stepsize_base', 0.1),
+        ('pmd_stepsize_type', 'pda_2'),
+        ('pmd_stepsize_base', 1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
         ('pmd_normalize_obs', False),
@@ -61,7 +61,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_pe_stepsize_type', 'constant'),
         ('pmd_pe_stepsize_base', 1e-3),
         ('pmd_pe_alpha', 1e-4),
-        ('pmd_pe_max_epochs', 100),
+        ('pmd_pe_max_epochs', 10),
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
@@ -89,44 +89,17 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
-    # PDA Lunar_lander with rkhs and nn 
-    env_names = ['InvertedPendulum-v4']
+    algs = ['pda', 'ppo', 'ddpg']
+    for alg in algs:
+        od['alg'] = alg
 
-    stepsize_types = ['pda_1', 'pda_2']
-    stepsize_bases = [0.1, 1, 10]
-    n_epochs_list = [10,100]
-    policy_noises = [1.,0.]
-
-    for policy_noise in policy_noises:
-        od['pda_policy_noise'] = policy_noise
-        for n_epochs in n_epochs_list:
-            od['pmd_pe_max_epochs'] = n_epochs
-            for stepsize_base in stepsize_bases:
-                od['pmd_stepsize_base'] = stepsize_base
-                for stepsize_type in stepsize_types:
-                    od['pmd_stepsize_type'] = stepsize_type
-                    setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-                    od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-                    if not(os.path.exists(od["log_folder"])):
-                        os.makedirs(od["log_folder"])
-                    with open(setting_fname, 'w', encoding='utf-8') as f:
-                        json.dump(od, f, ensure_ascii=False, indent=4)
-                    ct += 1
-
-    # SB3
-    algs = ['ppo', 'ddpg']
-    for env_name in env_names:
-        od['env_name'] = env_name
-        for alg in algs:
-            od['alg'] = alg
-
-            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-            if not(os.path.exists(od["log_folder"])):
-                os.makedirs(od["log_folder"])
-            with open(setting_fname, 'w', encoding='utf-8') as f:
-                json.dump(od, f, ensure_ascii=False, indent=4)
-            ct += 1
+        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+        if not(os.path.exists(od["log_folder"])):
+            os.makedirs(od["log_folder"])
+        with open(setting_fname, 'w', encoding='utf-8') as f:
+            json.dump(od, f, ensure_ascii=False, indent=4)
+        ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -150,9 +123,7 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 100_000
-        if args.mode == "full":
-            seed_0 = 1
+        max_steps = 200_000
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":

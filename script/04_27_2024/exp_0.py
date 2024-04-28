@@ -45,7 +45,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('seed', seed_0),
         ('parallel', False),
         ('max_trials', max_trials),
-        ('max_iters', 100),
+        ('max_iters', int(max_steps/1000)),
         ('max_episodes', max_steps),
         ('max_steps', max_steps),
         ('gamma', 0.99),

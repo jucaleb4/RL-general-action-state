@@ -94,10 +94,12 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     env_step_multipliers = [0.1,1]
     alg_step_multipliers = [0.1,1,1]
 
+    od['alg'] = 'pmd'
     od['pmd_stepsize_type'] = 'pda_1'
     for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
         od['env_name'] = env_name
         od['max_steps'] = min(_max_steps, max_steps)
+        od['max_iters'] = int(od['max_steps']/1000)
         for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
                 fa_types, 
                 policy_dvgs, 

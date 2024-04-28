@@ -48,7 +48,7 @@ class PDAGeneralStateAction(FOPO):
             self.action_dim = action_dim[0]
             
         if(action_is_finite or obs_is_finite):
-            raise Exception("Both action and state space must be finite")
+            raise Exception("Both action and state space must be infinite (e.g. Box)")
 
         self.obs_runstat = RunningStat(obs_dim)
         self.action_runstat = RunningStat(action_dim)
