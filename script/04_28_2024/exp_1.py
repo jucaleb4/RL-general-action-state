@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_27_2024"
-EXP_ID = 0
-MAX_RUNS = 14
+DATE = "04_28_2024"
+EXP_ID = 1
+MAX_RUNS = 3
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
