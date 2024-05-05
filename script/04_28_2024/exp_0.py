@@ -123,7 +123,7 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 200_000
+        max_steps = 300_000
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":
