@@ -17,6 +17,10 @@ import numpy as np
 class PPO(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
+        self.model = None
+
+    def predict(self, obs, deterministic=False):
+        return self.model.predict(obs, deterministic=deterministic)[0].flat[0]
 
     def _learn(self, max_iters):
         # Above is for a modified sb3
@@ -30,7 +34,7 @@ class PPO(RLAlg):
         )
         clip_range = self.params["ppo_clip_range"] if self.params["ppo_clip_range"] >= 0 else np.inf
         max_grad_norm = self.params["ppo_max_grad_norm"] if self.params["ppo_max_grad_norm"] >= 0 else np.inf
-        model = sb3.PPO(
+        self.model = sb3.PPO(
             policy=self.params['ppo_policy'],
             env=self.env, 
             verbose=1, 
@@ -45,7 +49,7 @@ class PPO(RLAlg):
             normalize_advantage=self.params["ppo_normalize_adv"],
             seed=self.params["seed"]
         )
-        model.learn(max_iters, callback=callback_max_episodes)
+        self.model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()

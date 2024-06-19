@@ -81,6 +81,8 @@ def main(params, output={}):
                 full_env_name,
                 max_episode_steps=1000, # can change length here!
                 rho=params['rho'],
+                # penalty_in_rwd=params['alg']!='pda',
+                penalty_in_rwd=True,
             )
         else:
             full_env_name = env_name
@@ -138,12 +140,16 @@ def main(params, output={}):
         # output[params['seed']] = alg.learn(params["max_iters"])
         alg.learn(params["max_iters"])
 
+        # make it deterministic
+        alg.params['pda_policy_noise'] = 0
         get_action = lambda s : alg.policy_sample(s)
     elif alg_name == "qlearn":
         alg._learn(params["max_steps"], max_episodes=params["max_steps"])
+        get_action = lambda obs : alg.predict(obs)
     else:
         # output[params['seed']] = alg.learn(params["max_steps"])
         alg.learn(params["max_steps"])
+        get_action = lambda obs : alg.predict(obs)
 
     # save output
     if "GiniPortfolio" in env_name:
@@ -156,7 +162,7 @@ def main(params, output={}):
         )
         test_env = gym.wrappers.FlattenObservation(test_env)
 
-        fname = "portfolio_%s_seed=%i.csv" % (env_name, params['seed'])
+        fname = "portfolio_%s_seed=%i.csv" % (alg_name, params['seed'])
         validate(test_env, get_action, fname)
 
 def main_with_open_settings(settings_file):

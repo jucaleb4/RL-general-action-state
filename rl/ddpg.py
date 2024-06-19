@@ -18,6 +18,10 @@ import numpy as np
 class DDPG(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
+        self.model = None
+
+    def predict(self, obs, deterministic=False):
+        return self.model.predict(obs, deterministic=deterministic)[0].flat[0]
 
     def _learn(self, max_iters):
         # Above is for a modified sb3
@@ -32,14 +36,14 @@ class DDPG(RLAlg):
 
         n_actions = self.env.action_space.shape[-1]
         action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
-        model = sb3.DDPG(
+        self.model = sb3.DDPG(
             "MlpPolicy", 
             self.env, 
             action_noise=action_noise,
             verbose=1, 
             seed=self.params['seed']
         )
-        model.learn(max_iters, callback=callback_max_episodes)
+        self.model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()
