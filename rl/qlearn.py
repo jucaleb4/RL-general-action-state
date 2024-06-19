@@ -121,12 +121,14 @@ class QLearn(RLAlg):
             return A
         return policy_fn
 
-    def _learn(self, n_iter):
+    def _learn(self, max_steps, max_episodes):
         last_reward = 0
-        episode_rewards = np.zeros(n_iter, dtype=float)
-        episode_lens = np.zeros(n_iter, dtype=int)
+        episode_rewards = np.zeros(max_episodes, dtype=float)
+        episode_lens = np.zeros(max_episodes, dtype=int)
+        n_steps = 0
+        n_episodes = 0
 
-        for i in range(n_iter):
+        for i in range(max_episodes):
             epsilon_ = self.params["epsilon"] * self.params["epsilon_decay"]**i
             n_actions = self.env.action_space.n
             policy = self.make_epsilon_greedy_policy(epsilon_, n_actions)
@@ -155,7 +157,7 @@ class QLearn(RLAlg):
             
                 # Take a step
                 next_state, reward, term, trunc, _ = self.env.step(action)
-                curr_reward += reward
+                curr_reward += self.params['gamma']**t * reward
                 done = term or trunc
     
                 # TD Update
@@ -173,28 +175,36 @@ class QLearn(RLAlg):
                 # Update the function approximator using our target
                 self.estimator.update(state, action, td_target)
             
-                print("\rStep {} @ Episode {}/{} (last episode:{})".format(t, i + 1, n_iter, last_reward), end="")
+                print("\rStep {} @ Episode {}/{} (last episode:{})".format(t, i + 1, max_episodes, last_reward), end="")
                 
                 if done:
                     last_reward = curr_reward
                     episode_rewards[i] = last_reward
                     episode_lens[i] = t
                     curr_reward = 0
+                    n_episodes += 1
                     print("")
                     break
                 
                 state = next_state
                 t += 1
+                n_steps += 1
 
-        self.save_episode_rewards(episode_rewards, episode_lens)
+                if n_steps > max_steps:
+                    break
+
+            if n_steps > max_steps:
+                break
+
+        self.save_episode_rewards(episode_rewards[:n_episodes], episode_lens[:n_episodes])
 
     def save_episode_rewards(self, rwd_arr, len_arr):
-        if "fname" not in self.params:
+        if "log_file" not in self.params:
             warnings.warn("No filename given, not saving")
             return
         fmt="%1.2f,%i"
         arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
-        with open(self.params["fname"], "wb") as fp:
+        with open(self.params["log_file"], "wb") as fp:
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
-        print(f"Saved episode data to {self.params['fname']}")
+        print(f"Saved episode data to {self.params['log_file']}")

@@ -14,7 +14,7 @@ from rl import RLAlg
 
 import numpy as np
 
-class PPO(RLAlg):
+class DQN(RLAlg):
     def __init__(self, env, params):
         super().__init__(env, params)
 
@@ -28,23 +28,7 @@ class PPO(RLAlg):
             max_episodes=max_episodes, 
             verbose=1
         )
-        clip_range = self.params["ppo_clip_range"] if self.params["ppo_clip_range"] >= 0 else np.inf
-        max_grad_norm = self.params["ppo_max_grad_norm"] if self.params["ppo_max_grad_norm"] >= 0 else np.inf
-        model = sb3.PPO(
-            policy=self.params['ppo_policy'],
-            env=self.env, 
-            verbose=1, 
-            n_steps=self.params['ppo_rollout_len'],
-            learning_rate=self.params['ppo_lr'],
-            n_epochs=self.params['ppo_n_epochs'],
-            batch_size=self.params['ppo_batch_size'],
-            gamma=self.params['gamma'],
-            gae_lambda=self.params['ppo_gae_lambda'],
-            clip_range=clip_range,
-            max_grad_norm=max_grad_norm,
-            normalize_advantage=self.params["ppo_normalize_adv"],
-            seed=self.params["seed"]
-        )
+        model = sb3.DQN("MlpPolicy", self.env, verbose=1, seed=self.params['seed'])
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()

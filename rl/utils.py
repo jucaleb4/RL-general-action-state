@@ -5,6 +5,12 @@ import numpy.linalg as la
 
 import gymnasium as gym
 
+def safe_mean(arr):
+    return -1 if len(arr) == 0 else np.mean(arr)
+
+def safe_std(arr):
+    return -1 if len(arr) == 0 else np.std(arr)
+
 def safe_normalize_row(arr, tol=1e-32):
     """ 
     Normalizes rows (in place) so rows sum to 1
@@ -158,29 +164,28 @@ class RunningStat():
         S[idx_where_var_small] = 1
         return S/(self.k-1.)
 
-def tsallis_policy_update(x, cum_grad, eta_t, lam=None):
+def tsallis_policy_update(cum_grad, eta_t, lam=None):
     """ Policy update for Tsallis Inf. Solves up to accuracy 1e-6 if warm-start
     and 1e-8 for cold start.
 
     We want to solve
-    \[
-        min_{x \in \Delta_n} { <cum_grad, x> + eta_t^{-1} Psi(x) }
-    \]
+    $$
+        min_{x in Delta_n} { <cum_grad, x> + eta_t^{-1} Psi(x) }
+    $$
     where (with a=0.5)
-    \[
-        Psi(x) := \sum\limits_{i=1}^n -(x_i^a)/a
-    \]
+    $$
+        Psi(x) := sumlimits_{i=1}^n -(x_i^a)/a
+    $$
     By KKT conditions, we want to find ({x_i}_i, y=lam) such 
-    \[
+    $$
         cum_grad_i - eta_t^{-1}/(1-a) * x_i^(a-1) + y = 0, for all i
-    \]
+    $$
     and x is probability simplex. Solving for x,
-    \[
+    $$
         x_i = [ (1-a) * eta_t * (cum_grad_i + y) ]^(1/(a-1))
-    \]
+    $$
     So we compute this x_i and do binary search on y until this quantity x_i is a probability simplex
 
-    :param x: current policy
     :param cum_grad: cumulative gradient
     :param eta_t: step size
     :param lam: lam to use for warm start

@@ -9,6 +9,5 @@ from rl.pmd import PMDFiniteStateAction
 from rl.pmd import PMDGeneralStateFiniteAction
 from rl.pda import PDAGeneralStateAction
 from rl.qlearn import QLearn
-from rl.ppo import PPO
 
 import rl.gopt as gopt
