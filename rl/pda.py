@@ -88,6 +88,164 @@ class PDAGeneralStateAction(FOPO):
     def check_PDAGeneralStateAction_params(self):
         assert self.params["pmd_stepsize_type"] in ['pda_1', 'pda_2'], "PDA can only do stepsize_type pda_1 or pda_2"
 
+    def solve_policy_sample_subproblem(self, s):
+        if self.params['pda_constrained_RL']:
+            return self.solve_constrained_policy_sample_subproblem(s)
+        return self.solve_unconstrained_policy_sample_subproblem(s)
+
+    def solve_unconstrained_policy_sample_subproblem(self, s):
+        (_, lam_t) = self.get_stepsize_schedule()
+
+        tol_scale = 1./(self.curr_beta_sum)
+        bregman_scale = lam_t * tol_scale
+
+        # We take the negative since we want to maximize
+        idxs = np.array([[0]])
+        f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s, a)), idxs)  \
+                    + bregman_scale*0.5*la.norm(a-self.pi_0)**2
+        df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s, a)), idxs)[len(s):]  \
+                    + bregman_scale*(a-self.pi_0)
+        oracle = BlackBox(f, df)
+
+        # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
+        opt = ACFastGradDescent(
+            oracle, 
+            np.copy(self.pi_0), # a_0, 
+            self.projection,
+            alpha=0.0, 
+            tol=1e-3 * tol_scale,
+            stop_nonconvex=self.params['pda_stop_nonconvex'],
+            first_eta=self._first_eta
+        )
+
+        max_iter = 10
+        if self.just_updated_policy or self._last_state_done:
+            max_iter = 100
+        a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
+
+        if self.params['pda_plot_f'] and self.just_updated_policy:
+            # f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)  \
+            #             + bregman_scale*0.5*la.norm(a-self.pi_0)**2
+            # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)[len(s_):]  \
+            #             + bregman_scale*(a-self.pi_0)
+            f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)), idxs) 
+            f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s_)), a)), idxs) 
+            # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)), idxs)[len(s_):] 
+
+            # f
+            plt.style.use('ggplot')
+            fig, ax = plt.subplots()
+            fig.set_size_inches(8, 5)
+            xs = np.linspace(-3,3,1000,endpoint=True)
+            ax.plot(xs, [f(x) for x in xs])
+            ax.set(
+                xlabel="a",
+                ylabel='Q(s,a)',
+            )
+            ax.set_title("State-action value at iteration t=%i where\ns=%s" % (self.t, s_))
+            plt.tight_layout()
+
+            pic_name = os.path.join("plots", "q_iter=%i.png" % self.t)
+            plt.savefig(pic_name)
+            # plt.show()
+            plt.close()
+
+            # f_0
+            plt.style.use('ggplot')
+            fig, ax = plt.subplots()
+            fig.set_size_inches(8, 5)
+            xs = np.linspace(-3,3,1000,endpoint=True)
+            ax.plot(xs, [f_0(x) for x in xs])
+            ax.set(
+                xlabel="a",
+                ylabel='Q(0,a)',
+            )
+            ax.set_title("State-action value at iteration t=%i where s=[0 0 0 0]" % self.t)
+            plt.tight_layout()
+
+            pic_name = os.path.join("plots", "q_0_iter=%i.png" % self.t)
+            plt.savefig(pic_name)
+            # plt.show()
+            plt.close()
+        
+        self._first_eta = opt.first_eta
+        self.sampling_grad.append(grad_hist[-1])
+
+        return a_hat
+
+    def solve_constrained_policy_sample_subproblem(self, s):
+        (_, lam_t) = self.get_stepsize_schedule()
+
+        tol_scale = 1./(self.curr_beta_sum)
+        bregman_scale = lam_t * tol_scale
+
+        A = self.last_info['A']
+        b = self.last_info['b']
+        n_A = len(self.env.action_space.low)
+        R = self.params['pda_R']
+        theta = self.params['pda_theta']
+
+        # We take the negative since we want to maximize
+        idxs = np.array([[0]])
+        def f(x):
+            a = x[:n_A]
+            f_rl = -self.fa_Q_accum.predict(np.atleast_2d(np.append(s, a)), idxs)  \
+                   + bregman_scale*0.5*la.norm(a-self.pi_0)**2
+            f_penalty = self.last_info['penalty_f'](x)
+            res = A.dot(x)-b
+            if la.norm(res) <= R*theta:
+                y = 1./theta * res
+            else:
+                y = R*res/la.norm(res)
+            F_eta = np.dot(res, y) - theta/2*la.norm(y)**2
+
+            return f_rl + f_penalty + F_eta
+
+        def df(x):
+            a = x[:n_A]
+            df_rl = -self.fa_Q_accum.grad(np.atleast_2d(np.append(s, a)), idxs)[len(s):]  \
+                    + bregman_scale*(a-self.pi_0)
+            df_dx = self.last_info['penalty_df'](x)
+            res = A.dot(x)-b
+            if la.norm(res) <= R*theta:
+                y = 1./theta * res
+            else:
+                y = R*res/la.norm(res)
+            df_dx += A.T.dot(y)
+            
+            df_dx[:n_A] += df_rl
+
+            return df_dx
+
+        oracle = BlackBox(f, df)
+
+        def projection(x):
+            ubs = self.last_info['ubs']
+            lbs = self.last_info['lbs']
+            x[:n_A] = np.minimum(ubs, np.maximum(lbs, x[:n_A]))
+            return x
+
+        x_0 = np.zeros(A.shape[1], dtype=float)
+        opt = ACFastGradDescent(
+            oracle, 
+            x_0,
+            projection,
+            alpha=0.0, 
+            tol=1e-3 * tol_scale,
+            stop_nonconvex=self.params['pda_stop_nonconvex'],
+            first_eta=self._first_eta
+        )
+
+        max_iter = 10
+        if self.just_updated_policy or self._last_state_done:
+            max_iter = 100
+        a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
+
+        self._first_eta = opt.first_eta
+        self.sampling_grad.append(grad_hist[-1])
+
+        return a_hat[:n_A]
+
     def policy_sample(self, s):
         """ 
         Sample via AC-FGM 
@@ -125,7 +283,6 @@ class PDAGeneralStateAction(FOPO):
 
         s_ = np.copy(s)
         warm_start = True
-        just_updated_policy = self.just_updated_policy
         if self.just_updated_policy:
             self.sampling_grad = []
             self.mu_Q = 0.
@@ -153,88 +310,7 @@ class PDAGeneralStateAction(FOPO):
         a_0 = self._last_a if warm_start else self.pi_0
 
         while 1:
-            (_, lam_t) = self.get_stepsize_schedule()
-
-            tol_scale = 1./(self.curr_beta_sum)
-            bregman_scale = lam_t * tol_scale
-
-            # TODO: Add regularization
-            # We take the negative since we want to maximize
-            idxs = np.array([[0]])
-            f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)), idxs)  \
-                        + bregman_scale*0.5*la.norm(a-self.pi_0)**2
-            df = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)), idxs)[len(s_):]  \
-                        + bregman_scale*(a-self.pi_0)
-            # xs = np.linspace(-3,3,100)
-            # plt.plot(xs, [f(x) for x in xs])
-            # plt.title("bregman scale=%.2e" % bregman_scale)
-            # plt.show()
-            oracle = BlackBox(f, df)
-
-            # stop_nonconvex = abs(self.mu_d) <= ub_est_Q_grad_norm
-            opt = ACFastGradDescent(
-                oracle, 
-                np.copy(self.pi_0), # a_0, 
-                self.projection,
-                alpha=0.0, 
-                tol=1e-3 * tol_scale,
-                stop_nonconvex=self.params['pda_stop_nonconvex'],
-                first_eta=self._first_eta
-            )
-
-            max_iter = 10
-            if just_updated_policy or self._last_state_done:
-                max_iter = 100
-            a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
-
-            if self.params['pda_plot_f'] and just_updated_policy:
-                # f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)  \
-                #             + bregman_scale*0.5*la.norm(a-self.pi_0)**2
-                # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)[len(s_):]  \
-                #             + bregman_scale*(a-self.pi_0)
-                f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)), idxs) 
-                f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s_)), a)), idxs) 
-                # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)), idxs)[len(s_):] 
-
-                # f
-                plt.style.use('ggplot')
-                fig, ax = plt.subplots()
-                fig.set_size_inches(8, 5)
-                xs = np.linspace(-3,3,1000,endpoint=True)
-                ax.plot(xs, [f(x) for x in xs])
-                ax.set(
-                    xlabel="a",
-                    ylabel='Q(s,a)',
-                )
-                ax.set_title("State-action value at iteration t=%i where\ns=%s" % (self.t, s_))
-                plt.tight_layout()
-
-                pic_name = os.path.join("plots", "q_iter=%i.png" % self.t)
-                plt.savefig(pic_name)
-                # plt.show()
-                plt.close()
-
-                # f_0
-                plt.style.use('ggplot')
-                fig, ax = plt.subplots()
-                fig.set_size_inches(8, 5)
-                xs = np.linspace(-3,3,1000,endpoint=True)
-                ax.plot(xs, [f_0(x) for x in xs])
-                ax.set(
-                    xlabel="a",
-                    ylabel='Q(0,a)',
-                )
-                ax.set_title("State-action value at iteration t=%i where s=[0 0 0 0]" % self.t)
-                plt.tight_layout()
-
-                pic_name = os.path.join("plots", "q_0_iter=%i.png" % self.t)
-                plt.savefig(pic_name)
-                # plt.show()
-                plt.close()
-            
-            self._first_eta = opt.first_eta
-            self.sampling_grad.append(grad_hist[-1])
-
+            a_hat = self.solve_policy_sample_subproblem(s_)
             self._last_a = np.copy(a_hat)
 
             if self.params['pda_stop_nonconvex'] and opt.detected_nonconvex:

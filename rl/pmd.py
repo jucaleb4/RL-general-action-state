@@ -34,7 +34,7 @@ class FOPO(RLAlg):
 
         # initialize
         self.t = -1
-        self._last_obs, _ = env.reset()
+        self._last_obs, self.last_info = env.reset()
 
         self.rollout = Rollout(env, **params)
         self.episode_rewards = []
@@ -102,9 +102,10 @@ class FOPO(RLAlg):
             v_s = self.estimate_value(s)
 
             a = self.policy_sample(s)
-            (next_s, r_raw, term, trunc, _)  = self.env.step(a)
+            (next_s, r_raw, term, trunc, info)  = self.env.step(a)
             done = term or trunc
             r = self.normalize_rwd(r_raw)
+            self.last_info = info
             # if truncated due to time limit, bootstrap cost-to-go
             if trunc:
                 v_next_s = self.estimate_value(next_s)
@@ -121,8 +122,9 @@ class FOPO(RLAlg):
                 self.n_episodes += 1
                 if self.n_episodes >= self.max_episodes or self.n_step >= self.max_steps:
                     return 
-                s, _ = self.env.reset()
+                s, info = self.env.reset()
                 next_s = s
+                self.last_info = info
 
             self._last_obs = np.copy(s)
             s = next_s

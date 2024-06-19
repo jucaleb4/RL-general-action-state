@@ -11,6 +11,8 @@ import numpy.linalg as la
 # AGD
 # AC-FGM
 
+MAXITER = int(1e3)
+
 class Optimizer(ABC):
     """ 
     Convex smooth optimization 
@@ -168,8 +170,10 @@ class ACFastGradDescent(Optimizer):
         eta_lb = ...
         eta_ub = ...
         phase_I_incr = ...
+        ct = 0
 
-        while 1:
+        while ct <= MAXITER:
+            ct += 1
             z = self.projection(self._y - eta*self._grad)
             y = (1-self.beta)*self._y + self.beta*z
             next_x = (z + tau_t*self._x)/(1.+tau_t)
@@ -185,23 +189,25 @@ class ACFastGradDescent(Optimizer):
             if lb <= eta <= ub:
                 return eta
             elif phase_I:
+                # increase the speed if taking too long
+                factor = 2 if ct <= MAXITER/2 else 10
                 # check if we should start/continue doubling search
                 if (first_iter or phase_I_incr) and eta < lb:
-                    eta *= 2
+                    eta *= factor
                     phase_I_incr = True
                 elif (first_iter or not phase_I_incr) and ub < eta:
-                    eta /= 2
+                    eta /= factor
                     phase_I_incr = False
                 # below prepares line search for binary search
                 elif phase_I_incr and ub < eta:
                     eta_ub = eta
-                    eta_lb = eta/2
-                    eta = (eta_lb+eta_ub)/2
+                    eta_lb = eta/factor
+                    eta = (eta_lb+eta_ub)/factor
                     phase_I = False
                 else:
-                    eta_ub = eta*2
+                    eta_ub = eta*factor
                     eta_lb = eta
-                    eta = (eta_lb+eta_ub)/2
+                    eta = (eta_lb+eta_ub)/factor
                     phase_I = False
                 first_iter = False
             else:
