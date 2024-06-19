@@ -18,6 +18,8 @@ import argparse
 
 import json
 
+import numpy as np
+
 import gymnasium as gym
 import gym_examples
 # import or_gym
@@ -31,6 +33,25 @@ from rl import utils
 def dictionary_clear_nones(dt):
     """ Returns a copied dictionary and removes keys whose value is None """
     return dict({k: v for k, v in dt.items() if v is not None})
+
+def validate(env, get_action, fname):
+    obs = env.reset()[0]
+
+    T = 1024
+    rewards = np.zeros(T, dtype=float)
+    Ginis   = np.zeros(T, dtype=float)
+
+    for t in range(T):
+        a = get_action(obs)
+        obs, rwd = env.step(a)[0:2]
+
+        rewards[t] = rwd
+        Ginis[t] = obs[-1]
+
+    with open(fname, "w") as fp:
+        fp.write("t,reward,Gini\n")
+        for t in range(T):
+            fp.write("%i,%.2f,%.2f\n" % (t, rewards[t], Ginis[t]))
 
 def main(params, output={}):
     env_name = params['env_name']
@@ -53,6 +74,13 @@ def main(params, output={}):
                 max_episode_steps=1000, # can change length here!
                 size=10,
                 num_obstacles=10,
+            )
+        elif "GiniPortfolio" in env_name:
+            full_env_name = os.path.join("gym_examples", env_name)
+            env = gym.make(
+                full_env_name,
+                max_episode_steps=1000, # can change length here!
+                rho=params['rho'],
             )
         else:
             full_env_name = env_name
@@ -109,11 +137,27 @@ def main(params, output={}):
     if alg_name in ["pmd", "pda"]:
         # output[params['seed']] = alg.learn(params["max_iters"])
         alg.learn(params["max_iters"])
+
+        get_action = lambda s : alg.policy_sample(s)
     elif alg_name == "qlearn":
         alg._learn(params["max_steps"], max_episodes=params["max_steps"])
     else:
         # output[params['seed']] = alg.learn(params["max_steps"])
         alg.learn(params["max_steps"])
+
+    # save output
+    if "GiniPortfolio" in env_name:
+        full_env_name = os.path.join("gym_examples", env_name)
+        test_env = gym.make(
+            full_env_name,
+            max_episode_steps=1000, # can change length here!
+            rho=params['rho'],
+            penalty_in_rwd=False
+        )
+        test_env = gym.wrappers.FlattenObservation(test_env)
+
+        fname = "portfolio_%s_seed=%i.csv" % (env_name, params['seed'])
+        validate(test_env, get_action, fname)
 
 def main_with_open_settings(settings_file):
     """
