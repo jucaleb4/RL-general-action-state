@@ -188,33 +188,46 @@ class PDAGeneralStateAction(FOPO):
             a_hat, f_hist, grad_hist = opt.solve(n_iter=max_iter)
 
             if self.params['pda_plot_f'] and just_updated_policy:
-                f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)  \
-                            + bregman_scale*0.5*la.norm(a-self.pi_0)**2
-                df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)[len(s_):]  \
-                            + bregman_scale*(a-self.pi_0)
+                # f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)  \
+                #             + bregman_scale*0.5*la.norm(a-self.pi_0)**2
+                # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(np.zeros(len(s)), a)), idxs)[len(s_):]  \
+                #             + bregman_scale*(a-self.pi_0)
+                f = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(s_, a)), idxs) 
+                f_0 = lambda a : -self.fa_Q_accum.predict(np.atleast_2d(np.append(np.zeros(len(s_)), a)), idxs) 
+                # df_0 = lambda a : -self.fa_Q_accum.grad(np.atleast_2d(np.append(s_, a)), idxs)[len(s_):] 
 
+                # f
                 plt.style.use('ggplot')
-                fig, axes = plt.subplots(ncols=2,nrows=2)
+                fig, ax = plt.subplots()
+                fig.set_size_inches(8, 5)
                 xs = np.linspace(-3,3,1000,endpoint=True)
-                axes[0,0].plot(xs, [f_0(x) for x in xs])
-                axes[0,1].plot(xs, [la.norm(df_0(x)) for x in xs])
-                axes[0,0].set(
+                ax.plot(xs, [f(x) for x in xs])
+                ax.set(
                     xlabel="a",
-                    ylabel='f(a)',
+                    ylabel='Q(s,a)',
                 )
-                axes[0,0].set_title("f at 0", fontsize=8)
-                axes[0,1].set(
-                    xlabel="a",
-                    ylabel=r"$\nabla f(a)$",
-                )
-
-                axes[1,0].plot(f_hist)
-                axes[1,1].plot(grad_hist)
-                axes[1,0].set(title="Convergence of f")
-                axes[1,1].set(title="Convergence of gradient", yscale='log')
+                ax.set_title("State-action value at iteration t=%i where\ns=%s" % (self.t, s_))
                 plt.tight_layout()
 
-                pic_name = os.path.join("plots", "iter=%i.png" % self.t)
+                pic_name = os.path.join("plots", "q_iter=%i.png" % self.t)
+                plt.savefig(pic_name)
+                # plt.show()
+                plt.close()
+
+                # f_0
+                plt.style.use('ggplot')
+                fig, ax = plt.subplots()
+                fig.set_size_inches(8, 5)
+                xs = np.linspace(-3,3,1000,endpoint=True)
+                ax.plot(xs, [f_0(x) for x in xs])
+                ax.set(
+                    xlabel="a",
+                    ylabel='Q(0,a)',
+                )
+                ax.set_title("State-action value at iteration t=%i where s=[0 0 0 0]" % self.t)
+                plt.tight_layout()
+
+                pic_name = os.path.join("plots", "q_0_iter=%i.png" % self.t)
                 plt.savefig(pic_name)
                 # plt.show()
                 plt.close()
