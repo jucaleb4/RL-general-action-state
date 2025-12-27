@@ -1,5 +1,7 @@
 import warnings 
 
+import itertools
+
 import numpy as np
 import numpy.linalg as la
 
@@ -257,3 +259,34 @@ def tsallis_policy_update(cum_grad, eta_t, lam=None):
     #     import ipdb; ipdb.set_trace()
     #     pass
     return (x_star, best_lam)
+
+def get_all_grid_pts(lows, highs):
+    """ Given n-dimensional grid (where n=len(lows)), return grid points of the form
+
+        (i_1,...,i_n) 
+
+    for all permutations of (i_1,...,i_n) where i_j = lows[j],...,lows[j]-1.
+    For example if lows=[0,-1,1] and highs[1,1,3], then we return
+
+        [
+            [0,-1, 1],
+            [0,-1, 2],
+            [0, 0, 1],
+            [0, 0, 2],
+        ]
+
+    :params lows: numpy array of min values along each axis
+    :params highs: numpy array of max values (inclusive) along each axis (match length of lows)
+    :return: 2d array of all grid points
+    """
+
+    if len(lows) != len(highs):
+        return None
+    # returns meshgrid in dimension of len(lows)x(highs-lows)
+    # asterisk is to convert the list to multiple inputs to meshgrid (i.e. unpacking)
+    meshgrid_separate_dim = np.meshgrid(*[np.arange(lows[i], highs[i]+1) for i in range(len(lows))])
+    # concatenates all dimensions
+    # see: https://numpy.org/doc/stable/reference/generated/numpy.c_.html
+    meshgrid_arr = np.c_[meshgrid_separate_dim]
+    # reshape so the dimension len(lows) is 2nd dim, and collapse other axes to 1st dim
+    return np.reshape(meshgrid_arr, newshape=(len(lows),-1)).T

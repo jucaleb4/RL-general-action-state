@@ -184,7 +184,7 @@ class Rollout:
         return self.all_ep_len
 
     def compute_all_stateaction_value(self):
-        """ Compute advatange function 
+        """ Compute advantage function 
         # TODO: Compute GAE (https://arxiv.org/pdf/1506.02438.pdf)
 
         :return Q: 2d array of estimated Q function (via Monte Carlo)

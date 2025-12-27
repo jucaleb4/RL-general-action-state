@@ -68,6 +68,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_max_grad_norm', 1),
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
+        ('pmd_validation_type', "POINT"),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),

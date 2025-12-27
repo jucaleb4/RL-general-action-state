@@ -23,6 +23,7 @@ from rl.utils import pretty_print_gridworld
 from rl.utils import RunningStat
 from rl.utils import tsallis_policy_update
 from rl.utils import safe_mean
+from rl.utils import get_all_grid_pts
 
 import torch as th
 
@@ -72,6 +73,8 @@ class FOPO(RLAlg):
             self.policy_evaluate()
 
             self.policy_update()
+
+            self.policy_validation()
 
             self.prepare_log()
             self.dump_log()
@@ -139,6 +142,16 @@ class FOPO(RLAlg):
     def policy_update(self): 
         """ Uses policy estimation from `policy_evaluate()` and updates new policy (can
             differ depending on policy approximation).
+        """
+        raise NotImplemented
+
+    @abstractmethod
+    def policy_validation(self): 
+        """ Performs policy validation to save current:
+            - V^pi(s) : point estimate of value function
+            - g^pi(s) : point estimate of gap advantage function
+            - bar(V^k) : aggregated value
+            - g^[pi](s) : aggreaged gap advantage function
         """
         raise NotImplemented
 
@@ -230,6 +243,10 @@ class FOPO(RLAlg):
             self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
         else:
             self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2e}\n"
+        self.msg += f"  {'point-V':<{l}}: {np.mean(self.point_V):.2f}\n"
+        self.msg += f"  {'point-Agap':<{l}}: {np.max(self.point_A_gap):.2f}\n"
+        self.msg += f"  {'agg-V':<{l}}: {np.mean(self.agg_V):.2f}\n"
+        self.msg += f"  {'agg-Agap':<{l}}: {np.max(self.agg_A_gap):.2f}\n"
 
         self.msg += "time/\n"
         self.msg += f"  {'itr':<{l}}: {self.t}\n"
@@ -245,6 +262,9 @@ class FOPO(RLAlg):
         self.msg = ""
 
     def save_episode_reward_and_len(self):
+        """
+        Saves reward, length, and advantage(?)
+        """
         rwd_arr = self.rollout.get_ep_rwds()
         len_arr = self.rollout.get_ep_lens()
 
@@ -357,7 +377,10 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         assert action_is_finite, "Action space not finite"
 
+        self.all_states_as_list = ...
+        self.last_mc_q_est = ...
         self.n_actions = get_space_cardinality(self.action_space)
+
         if isinstance(obs_dim, tuple):
             assert len(obs_dim) == 1, "Can only handle 1D observation space"
             self.obs_dim = obs_dim[0]
@@ -386,6 +409,16 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.intercept_accum = np.copy(self.last_intercepts)
             self.last_theta_accum = np.copy(self.theta_accum)
             self.last_intercept_accum = np.copy(self.intercept_accum)
+
+            # for validation
+            self.fa_Q_val = LinearFunctionApproximator(X, params) 
+            self.last_thetas_val = np.zeros((self.n_actions, self.fa_Q_val.dim), dtype=float)
+            self.last_intercepts_val = np.zeros((self.n_actions, 1), dtype=float)
+            self.theta_accum_val = np.copy(self.last_thetas_val)
+            self.intercept_accum_val = np.copy(self.last_intercepts_val)
+            self.last_theta_accum_val = np.copy(self.theta_accum_val)
+            self.last_intercept_accum_val = np.copy(self.intercept_accum_val)
+
         else:
             print("Using neural network with tanh activation")
             self.fa_Q = NNFunctionApproximator(
@@ -394,6 +427,17 @@ class PMDGeneralStateFiniteAction(FOPO):
                 params=params
             )
             self.fa_Q_accum = NNFunctionApproximator(
+                input_dim=self.obs_dim, 
+                output_dim=self.n_actions, 
+                params=params
+            )
+            # only for validation
+            self.fa_Q_val = NNFunctionApproximator(
+                input_dim=self.obs_dim, 
+                output_dim=self.n_actions, 
+                params=params
+            )
+            self.fa_Q_accum_val = NNFunctionApproximator(
                 input_dim=self.obs_dim, 
                 output_dim=self.n_actions, 
                 params=params
@@ -458,6 +502,12 @@ class PMDGeneralStateFiniteAction(FOPO):
         self._last_s_visited = ...
         self._last_a_visited = ...
         self._last_y = ...
+
+        # validation
+        self.set_state_discretization()
+        self.agg_V = np.zeros(len(self.all_states_as_list), dtype=float)
+        self.agg_Q = np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
+        self.agg_A = np.copy(self.agg_Q)
 
     def sb3_collect_rollouts(self):
         assert self._last_obs is not None, "No previous observation was provided"
@@ -558,6 +608,28 @@ class PMDGeneralStateFiniteAction(FOPO):
         self.record_policy_change()
         """
 
+    def set_state_discretization(self, n_grid_pts=-1):
+        """
+        Discretizes state space for evaluation. Only support finite state space
+
+        TODO: Continuous state space
+
+        :param n_grid_pts: Number of grid points along each dimension (vaocous for now)
+        """
+        (obs_is_finite, obs_dim, _) = get_space_property(self.obs_space)
+
+        if not obs_is_finite:
+            warnings.warn(f"No support for non-finite state space yet.")
+            return
+
+        self.all_states_as_list = get_all_grid_pts(self.obs_space.low, self.obs_space.high)
+
+        # create mapping from states to integers
+        self.s_to_idx = dict({})
+        for i, s in enumerate(self.all_states_as_list):
+            s_ = tuple(s)
+            self.s_to_idx[s_] = i
+
     def _get_logpolicy(self, s):
         if not self.updated_at_least_once:
             return np.zeros(self.n_actions, dtype=float)
@@ -631,6 +703,72 @@ class PMDGeneralStateFiniteAction(FOPO):
         pi = self._get_policy(self.normalize_obs(s))
         return self.rng.choice(self.n_actions, p=pi)
 
+    def policy_validation(self):
+        """ 
+        Computes necessary intermediates to perform validation analysis:
+            - Point estimate of value and gap advantage function at all states
+            - Aggregated estimate of value and gap advantage function at all states
+
+        Recall we have there hueristics to compute these quantities:
+            - MC : uses only Monte Carlo estimates (see: https://arxiv.org/pdf/2303.04386)
+            - POINT : uses function approximation for point estimates only (aggregate point estimates)
+            - AGG: uses function approximation for both point estimates and aggreaged quantities
+        """
+
+        Q = np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
+
+        if self.params['pmd_validation_type'] == "MC":
+            visited = np.copy(Q).astype(int)
+            for i, (s,a) in enumerate(zip(self._last_s_visited, self._last_a_visited)):
+                s_ = self.s_to_idx[tuple(s)]
+                if visited[s_,a] == 0:
+                    Q[s_,a] = self.last_mc_q_est[i]
+                visited[s_,a] = 1
+        elif self.params['pmd_fa_type'] == "linear":
+            for a in range(self.n_actions):
+                self.fa_Q_val.set_coef(self.last_thetas_val[a])
+                self.fa_Q_val.set_intercept(self.last_intercepts_val[a])
+                Q[:,a] = self.fa_Q_val.predict(self.all_states_as_list)
+        elif self.params['pmd_fa_type'] == "nn":
+            # q_s = self.fa_Q.predict(self.all_states_as_list, np.arange(self.n_actions))
+            for a in range(self.n_actions):
+                # TODO: Does this work?
+                # Q[:,a] = self.fa_Q.predict(self.all_states_as_list)
+                Q[:,a] = self.fa_Q_val.predict(self.all_states_as_list, np.array([a]))
+        else:
+            print("Unknown pmd_fa_type=%s" % self.params['pmd_fa_type'])
+
+        self.point_Q = np.copy(Q)
+        pi = np.zeros((self.n_actions, len(self.all_states_as_list)), dtype=float)
+        # TODO: Fix this bottleneck (if needed)
+        for i, s in enumerate(self.all_states_as_list):
+            pi[:,i] = self._get_policy(s)
+        self.point_V = np.einsum("sa,as->s", self.point_Q, pi)
+        self.point_A = self.point_Q - np.outer(self.point_V, np.ones(self.n_actions))
+
+        # compute aggregated quantity
+        if self.params['pmd_validation_type'] == "AGG":
+            if self.params['pmd_fa_type'] == "linear":
+                for a in range(self.n_actions):
+                    self.fa_Q_accum_val.set_coef(self.theta_accum_val[a])
+                    self.fa_Q_accum_val.set_intercept(self.intercept_accum_val[a])
+                    self.agg_Q[:,a] = self.fa_Q_accum_val.predict(self.all_states_as_list)
+            elif self.params['pmd_fa_type'] == "nn":
+                for a in range(self.n_actions):
+                    self.agg_Q[:,a] = self.fa_Q_accum_val.predict(self.all_states_as_list, np.array([a]))
+
+            self.agg_V = np.einsum("sa,as->s", self.agg_Q, pi)
+            self.agg_A = self.agg_Q - np.outer(self.agg_V, np.ones(self.n_actions))
+
+        else: # manually aggregate
+            alpha = 1./(self.t+1)
+            self.agg_V = (1.-alpha)*self.agg_V + alpha*self.point_V
+            self.agg_A = (1.-alpha)*self.agg_A + alpha*self.point_A
+
+        # compute advantage gap function
+        self.point_A_gap = np.max(-self.point_A, axis=1)
+        self.agg_A_gap   = np.max(-self.agg_A, axis=1)
+
     def policy_evaluate(self):
         """ Estimates Q function and stores in self.Q_est """
         # self.obs_runstat.update()
@@ -638,7 +776,6 @@ class PMDGeneralStateFiniteAction(FOPO):
         # self.rwd_runstat.update()
 
         self.monte_carlo_Q()
-        # TODO: Import rollout
 
     def monte_carlo_Q(self):
         """ 
@@ -691,10 +828,29 @@ class PMDGeneralStateFiniteAction(FOPO):
         else:
             train_loss,_ = self.fa_Q.update(X, a_visited, y, validation_frac=0)
 
+        # validation
+        if self.params['pmd_validation_type'] in ["POINT", "AGG"]:
+            if self.params['pmd_fa_type'] == "linear":
+                for i in range(self.n_actions):
+                    action_i_idx = np.where(a_visited==i)[0]
+                    if len(action_i_idx) == 0:
+                        not_visited_actions.append(i)
+                        continue
+                    self.fa_Q_val.set_coef(self.last_thetas_val[i])
+                    self.fa_Q_val.set_intercept(self.last_intercepts_val[i])
+                    self.fa_Q_val.update(X[action_i_idx], q_est[action_i_idx])
+                    self.last_thetas_val[i] = self.fa_Q_val.get_coef()
+                    self.last_intercepts_val[i] = self.fa_Q_val.get_intercept()
+            else:
+                self.fa_Q_val.update(X, a_visited, q_est, validation_frac=0)
+        elif self.params['pmd_validation_type'] == "MC":
+            self.last_mc_q_est = np.copy(q_est)
+        else:
+            warnings.warn("Unknown validation type %s" % self.params['pmd_validation_type'])
+
         if isinstance(train_loss, float) or isinstance(train_loss, int):
             loss += train_loss 
         else:
-            # TODO: What's going on here
             loss += np.mean(train_loss)
         if len(not_visited_actions) > 0:
             print(f"Did not update actions {not_visited_actions}")
@@ -755,6 +911,14 @@ class PMDGeneralStateFiniteAction(FOPO):
                                + (beta_t/curr_alpha_t) * self.last_thetas
             self.intercept_accum = (prev_alpha_t/curr_alpha_t) * self.intercept_accum  \
                                     + (beta_t/curr_alpha_t) * self.last_intercepts
+
+        # validation
+        if self.params['pmd_validation_type'] == "AGG":
+            self.last_theta_accum_val = np.copy(self.theta_accum_val)
+            self.last_intercept_accum_val = np.copy(self.intercept_accum_val)
+            alpha = 1./(self.t+1)
+            self.theta_accum_val = (1.-alpha)*self.theta_accum_val + alpha*self.last_thetas_val
+            self.intercept_accum_val = (1.-alpha)*self.intercept_accum_val + alpha*self.last_intercepts_val
 
     def sb3_policy_network_update(self):
         # Switch to train mode (this affects batch norm / dropout)
@@ -834,6 +998,18 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         self.last_po_loss = np.mean(train_losses)
         self.last_po_test_loss = np.mean(test_losses)
+
+        # validation
+        if self.params['pmd_validation_type'] == "AGG":
+            Q_acc_pred_val = self.fa_Q_accum_val.predict(self._last_s_visited, self._last_a_visited)
+            target_val = (1-1./(self.t+1)) * Q_acc_pred_val + 1./(self.t+1)*y
+            self.fa_Q_accum_val.update(
+                self._last_s_visited, 
+                self._last_a_visited,
+                target_val,
+                validation_frac=0,
+            )
+
         return train_losses, test_losses
 
     def policy_performance(self) -> float: 
