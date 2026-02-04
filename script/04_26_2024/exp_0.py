@@ -86,7 +86,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     ct = 0
 
     # PDA Lunar_lander with rkhs and nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v2']
+    env_names = ['GridWorld-v0', 'LunarLander-v3']
     max_steps_arr = [200_000, 500_000]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
