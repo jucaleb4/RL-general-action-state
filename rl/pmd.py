@@ -50,6 +50,7 @@ class FOPO(RLAlg):
         self.curr_beta_sum = 0
         self.prev_beta_sum = 0
         self.prev_lam_t = 0
+        self._last_state_done = False
 
     def _learn(self, max_iter):
         """ Runs PMD algorithm for `max_iter`s """
@@ -74,7 +75,8 @@ class FOPO(RLAlg):
 
             self.policy_update()
 
-            self.policy_validation()
+            # TODO: Figure out how to use this or skip
+            # self.policy_validation()
 
             self.prepare_log()
             self.dump_log()
@@ -89,22 +91,36 @@ class FOPO(RLAlg):
                 break
 
         self.save_episode_reward_and_len()
+        # validation
+        self.rollout.reset_validation()
+        # no limit on evaluation
+        self.max_steps = self.max_episodes = np.inf
+        for t in range(self.params["validation_steps"]//self.params["pmd_rollout_len"]):
+            self.collect_rollouts(explore_first=True, reset_env=t==0)
+        self.save_policy_validation()
         # self.save_policy_change()
         # return moving average reward (length 100)
         ep_cum_rwds = self.rollout.get_ep_rwds()
         t = min(100, len(ep_cum_rwds))
         return np.mean(ep_cum_rwds[-t:])
 
-    def collect_rollouts(self):
+    def collect_rollouts(self, skip_validation=False, explore_first=False, reset_env=False):
         """ Collect samples for policy evaluation """
         self.rollout.clear_batch()
 
         s = self._last_obs
+        if reset_env:
+            s = self.env.reset()[0]
 
         for t in range(self.params["pmd_rollout_len"]): 
             v_s = self.estimate_value(s)
 
-            a = self.policy_sample(s)
+            if self._last_state_done and explore_first:
+                a = np.random.choice(self.n_actions)
+            else:
+                a = self.policy_sample(s)
+            # TEMP: For rollout
+            # pi_at_s = self._get_policy(self.normalize_obs(s))
             (next_s, r_raw, term, trunc, _)  = self.env.step(a)
             done = term or trunc
             r = self.normalize_rwd(r_raw)
@@ -116,7 +132,7 @@ class FOPO(RLAlg):
                 self._curr_s = next_s
                 self._last_pred_value = self.estimate_value(next_s)
                 self._last_state_done = done
-            self.rollout.add_step_data(s, a, r, done, v_s, r_raw=r_raw)
+            self.rollout.add_step_data(s, a, r, done, v_s, r_raw=r_raw, skip_validation=skip_validation)
 
             self.n_step += 1
 
@@ -243,10 +259,11 @@ class FOPO(RLAlg):
             self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2f}\n"
         else:
             self.msg += f"  {'ep_rwd_25-ma':<{l}}: {moving_avg:.2e}\n"
-        self.msg += f"  {'point-V':<{l}}: {np.mean(self.point_V):.2f}\n"
-        self.msg += f"  {'point-Agap':<{l}}: {np.max(self.point_A_gap):.2f}\n"
-        self.msg += f"  {'agg-V':<{l}}: {np.mean(self.agg_V):.2f}\n"
-        self.msg += f"  {'agg-Agap':<{l}}: {np.max(self.agg_A_gap):.2f}\n"
+        # TEMP: Added
+        # self.msg += f"  {'point-V':<{l}}: {np.mean(self.point_V):.2f}\n"
+        # self.msg += f"  {'point-Agap':<{l}}: {np.max(self.point_A_gap):.2f}\n"
+        # self.msg += f"  {'agg-V':<{l}}: {np.mean(self.agg_V):.2f}\n"
+        # self.msg += f"  {'agg-Agap':<{l}}: {np.max(self.agg_A_gap):.2f}\n"
 
         self.msg += "time/\n"
         self.msg += f"  {'itr':<{l}}: {self.t}\n"
@@ -274,6 +291,18 @@ class FOPO(RLAlg):
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
         print("Saved episode data to %s" % self.params['log_file'])
+
+    def save_policy_validation(self):
+        avg_V_arr = self.rollout.get_ep_avg_V()
+        avg_agap_arr = self.rollout.get_ep_avg_agap()
+        avg_Vstar_arr = np.array(avg_V_arr, dtype=float) - (1.-self.params['gamma'])**(-1)*np.array(avg_agap_arr, dtype=float)
+
+        fmt="%1.2f,%1.2f"
+        arr = np.vstack((np.atleast_2d(avg_V_arr), np.atleast_2d(avg_Vstar_arr))).T
+        with open(self.params["offline_validation_file"], "wb") as fp:
+            fp.write(b"avg_V,avg_V_star_lb\n")
+            np.savetxt(fp, arr, fmt=fmt)
+        print("Saved validation data to %s" % self.params['offline_validation_file'])
 
 class PMDFiniteStateAction(FOPO):
     def __init__(self, env, params):
@@ -505,8 +534,10 @@ class PMDGeneralStateFiniteAction(FOPO):
 
         # validation
         self.set_state_discretization()
-        self.agg_V = np.zeros(len(self.all_states_as_list), dtype=float)
-        self.agg_Q = np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
+        # TEMP: For continuous states, we will use a "reset" state as evaluation state. 
+        # Since the reset can be random, we will average them.
+        self.agg_V = 0 # np.zeros(len(self.all_states_as_list), dtype=float)
+        self.agg_Q = np.zeros(self.obs_dim, dtype=float) # np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
         self.agg_A = np.copy(self.agg_Q)
 
     def sb3_collect_rollouts(self):
@@ -709,13 +740,14 @@ class PMDGeneralStateFiniteAction(FOPO):
             - Point estimate of value and gap advantage function at all states
             - Aggregated estimate of value and gap advantage function at all states
 
-        Recall we have there hueristics to compute these quantities:
+        Recall we have there heuristics to compute these quantities:
             - MC : uses only Monte Carlo estimates (see: https://arxiv.org/pdf/2303.04386)
             - POINT : uses function approximation for point estimates only (aggregate point estimates)
             - AGG: uses function approximation for both point estimates and aggreaged quantities
         """
 
-        Q = np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
+        # Q = np.zeros((len(self.all_states_as_list), self.n_actions), dtype=float)
+        Q = np.zeros(self.agg_Q.shape, dtype=float)
 
         if self.params['pmd_validation_type'] == "MC":
             visited = np.copy(Q).astype(int)
@@ -1032,7 +1064,7 @@ class PMDGeneralStateFiniteAction(FOPO):
             self.params["pmd_rollout_len"] = max(2048, old_rollout_len)
         else:
             self.params["pmd_rollout_len"] = 10
-        self.collect_rollouts()
+        self.collect_rollouts(skip_validation=True)
         self.params["pmd_rollout_len"] =  old_rollout_len
 
         (q_est, adv_est, s_visited, a_visited) = self.rollout.get_est_stateaction_value()

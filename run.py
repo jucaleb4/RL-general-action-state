@@ -83,6 +83,7 @@ def main(params, output={}):
            "Must use function approximation if not enumerable"
 
     params['log_file'] = os.path.join(params['log_folder'], "seed=%s.csv" % params['seed'])
+    params['offline_validation_file'] = os.path.join(params['log_folder'], "offline_validation_seed=%s.csv" % params['seed'])
 
     alg_name = params['alg']
     if alg_name == "pmd" and params["pmd_fa_type"] == "none":

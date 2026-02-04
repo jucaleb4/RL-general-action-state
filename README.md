@@ -5,7 +5,6 @@ Implementation of RL ([PMD and PDA](https://arxiv.org/abs/2211.16715)) over gene
 TODO
 
 ## Creating scripts
-
 - `04_18_2024/exp_0`: Lots of algorithms Runs GridWorld (PDA+nn; for sanity check), LunarLander (PDE+lin, PDE+lin+"SB3 policy", PDE+nn, PDE+nn+"SB3 policy"), LunarLander perturbed (PDA+lin, PDA+nn), LunarLander (PPO, QLearn), LunarLander perturbed (PPO, QLearn)
 - `04_23_2024/exp_0`: PDA for GW and LL with different settings
 - `04_23_2024/exp_1`: PPO and DQN for GW and LL 
