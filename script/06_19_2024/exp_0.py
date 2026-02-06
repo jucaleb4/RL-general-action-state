@@ -82,7 +82,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
-        ('rho', 100.),
+        ('rho', 1000.),
         ('pda_R', 100.),
         ('pda_theta', 0.01),
         ('pda_constrained_RL', True),

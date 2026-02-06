@@ -18,7 +18,7 @@ from sklearn.linear_model import Lasso
 
 import torch
 from torch import nn
-from torchvision.transforms import ToTensor
+# from torchvision.transforms import ToTensor
 
 from enum import Enum
 

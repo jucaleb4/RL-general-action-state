@@ -81,8 +81,8 @@ def main(params, output={}):
                 full_env_name,
                 max_episode_steps=1000, # can change length here!
                 rho=params['rho'],
-                # penalty_in_rwd=params['alg']!='pda',
-                penalty_in_rwd=True,
+                penalty_in_rwd=params['alg']!='pda',
+                # penalty_in_rwd=True,
             )
         else:
             full_env_name = env_name
