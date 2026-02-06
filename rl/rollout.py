@@ -89,17 +89,6 @@ class Rollout:
 
         self.triggered_restart_warning = False
 
-        # for validation
-        self.curr_estQ = np.zeros(env.action_space.n, dtype=float)
-        self.curr_avgA = np.zeros(env.action_space.n, dtype=float)
-        self.curr_avgV = 0.
-        self.curr_action = 0 # which action is currently being estimated
-        self.num_V_mc_est = 0 # how many low-bias Monte-Carlo estimates we have had
-        self.num_Q_mc_est = 0 # how many low-bias Monte-Carlo estimates we have had
-        self.actions_est_arr = np.zeros(env.action_space.n, dtype=int) # num of estimators for each action
-        self.all_ep_avg_V = []
-        self.all_ep_avg_agap = []
-
     def set_gamma(self, gamma):
         self.gamma = gamma
 
@@ -114,7 +103,6 @@ class Rollout:
             a_raw=None,     
             r_raw=None,
             # pi_at_s=None,
-            skip_validation=False,
         ):
         """ Adds data returned from step 
         :param s: current state after step
@@ -150,10 +138,6 @@ class Rollout:
         self.r_raw_batch[self.time_ct] = r_raw
         self.time_ct += 1
 
-        # for validation
-        if self.curr_ep_len == 0:
-            self.curr_action = a_raw
-
         # NEW: For discounted reward
         self.curr_ep_cum_rwd += (self.gamma**self.curr_ep_len) * r_raw
         ep_rew = self.curr_ep_cum_rwd
@@ -161,30 +145,6 @@ class Rollout:
         self.curr_ep_len += 1
 
         if done:
-            # process for validation
-            if not skip_validation:
-                self.actions_est_arr[self.curr_action] += 1
-                _n = float(self.actions_est_arr[self.curr_action])
-                alpha = (_n-1.)/_n
-                Q_est_a = self.curr_estQ[self.curr_action]
-                self.curr_estQ[self.curr_action] = alpha*Q_est_a + (1.-alpha)*(-ep_rew)
-                alpha_V = float(self.num_V_mc_est)/(1.+self.num_V_mc_est)
-                alpha_Q = float(self.num_Q_mc_est)/(1.+self.num_Q_mc_est)
-                self.curr_avgV = alpha_V*self.curr_avgV + (1.-alpha_V)*(-ep_rew)
-                self.num_V_mc_est += 1
-                temp_curr_avgV = np.dot(self.actions_est_arr, self.curr_estQ)/np.sum(self.actions_est_arr)
-                temp_curr_A = self.curr_estQ - temp_curr_avgV
-                temp_curr_avgA = alpha_Q*self.curr_avgA + (1.-alpha_Q)*temp_curr_A
-
-                self.all_ep_avg_V.append(self.curr_avgV)
-                self.all_ep_avg_agap.append(np.max(-temp_curr_avgA))
-                if np.min(self.actions_est_arr) > 0:
-                    # reset and update
-                    self.curr_avgA[:] = temp_curr_avgA
-                    self.num_Q_mc_est += 1
-                    self.actions_est_arr[:] = 0
-                    self.curr_estQ[:] = 0.
-
             moving_avg = 0
             self.all_ep_cum_rwd.append(self.curr_ep_cum_rwd)
 
@@ -228,17 +188,6 @@ class Rollout:
 
     def get_ep_avg_agap(self):
         return self.all_ep_avg_agap
-
-    def reset_validation(self):
-        self.curr_estQ[:] = 0
-        self.curr_avgA[:] = 0
-        self.curr_avgV = 0.
-        self.curr_action = 0
-        self.num_V_mc_est = 0
-        self.num_Q_mc_est = 0
-        self.actions_est_arr[:]
-        self.all_ep_avg_V = []
-        self.all_ep_avg_agap = []
 
     def compute_all_stateaction_value(self):
         """ Compute advantage function 
