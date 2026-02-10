@@ -94,12 +94,20 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     stepsize_bases = [0.01, 0.001, 0.0001]
     policy_min_noises = [0.01, 1]
 
+    exp_metadata = ["id", "PDA noise", "PO eta", "PO step"]
+    row_format ="{:>5}" + "|{:>10}"*2 + "|{:>10}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+10*3+len(exp_metadata)-1))
+
     for policy_min_noise in policy_min_noises:
         od['pda_policy_min_noise'] = policy_min_noise
         for stepsize_base in stepsize_bases:
             od['pmd_stepsize_base'] = stepsize_base
             for stepsize_type in stepsize_types:
                 od['pmd_stepsize_type'] = stepsize_type
+
+                print(row_format.format(ct, od['pda_policy_min_noise'], od['pmd_stepsize_base'], od['pmd_stepsize_type']))
 
                 setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
                 od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
@@ -111,8 +119,17 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # SB3
     algs = ['ppo', 'ddpg']
+
+    exp_metadata = ["id", "Alg", "Env name"]
+    row_format ="{:>5}|{:>10}|{:>25}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+10+25+len(exp_metadata)-1))
+
     for alg in algs:
         od['alg'] = alg
+
+        print(row_format.format(ct, od['alg'], od['env_name']))
 
         setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
         od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)

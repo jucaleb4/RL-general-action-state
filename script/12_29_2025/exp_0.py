@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_26_2024"
+DATE = "12_29_2025"
 EXP_ID = 0
-MAX_RUNS = 10
+MAX_RUNS = 3
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -48,7 +48,8 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('max_iters', max_steps),
         ('max_episodes', max_steps),
         ('max_steps', max_steps),
-        ('gamma', 0.99),
+        ('validation_steps', 4*max_steps),
+        ('gamma', 0.9),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
         ('pmd_stepsize_type', 'pmd'),
@@ -86,24 +87,17 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     ct = 0
 
     # PDA Lunar_lander with rkhs and nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v3']
+    env_names = ['LunarLander-v3']
     max_steps_arr = [200_000, 500_000]
-    fa_types = ['linear', 'nn', 'nn']
-    pe_base_stepsizes = [0.01, 0.001, 0.001]
-    alphas = [1e-4, 0, 0]
-    policy_dvgs = ['kl', 'kl', 'tsallis']
-    env_step_multipliers = [0.1,1]
-    alg_step_multipliers = [0.1,1,1]
+    fa_types = ['linear']
+    pe_base_stepsizes = [0.01]
+    alphas = [1e-4]
+    policy_dvgs = ['kl']
+    env_step_multipliers = [0.1]
+    alg_step_multipliers = [0.1]
 
     od['alg'] = 'pmd'
     od['pmd_stepsize_type'] = 'pda_1'
-
-    exp_metadata = ["id", "Alg", "Env Name", "Max Steps", "Max Iters", "FA type", "Breg div", "PE step", "PE alpha", "PO step"]
-    row_format ="{:>5}|{:>10}|{:>20}" + "|{:>10}"*6 + "|{:>10}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+10+20+10*6+10+len(exp_metadata)-1))
-
     for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
         od['env_name'] = env_name
         od['max_steps'] = min(_max_steps, max_steps)
@@ -121,11 +115,6 @@ def setup_setting_files(seed_0, max_trials, max_steps):
             od['pmd_pe_alpha'] = pe_alpha
             od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
 
-            print(row_format.format(ct, od['alg'], od['env_name'], od['max_steps'], od['max_iters'],
-                  od['pmd_fa_type'], od['pmd_policy_divergence'],
-                  od['pmd_pe_stepsize_base'], od['pmd_pe_alpha'],
-                  od['pmd_stepsize_base']))
-
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
             if not(os.path.exists(od["log_folder"])):
@@ -136,18 +125,10 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # SB3
     algs = ['ppo', 'dqn']
-    exp_metadata = ["id", "Alg", "Env Name"]
-    row_format ="{:>5}|{:>10}|{:>20}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+10+20+len(exp_metadata)-1))
-
     for env_name in env_names:
         od['env_name'] = env_name
         for alg in algs:
             od['alg'] = alg
-
-            print(row_format.format(ct, od['alg'], od['env_name']))
 
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
@@ -179,15 +160,15 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 500_000
+        max_steps = 50_000
         if args.mode == "full":
-            max_trials = 9
-            seed_0 = 1
+            max_trials = 10
+            seed_0 = 0
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
-            max_trials = 2
+            max_trials = 1
 
         setup_setting_files(seed_0, max_trials, max_steps)
     else:

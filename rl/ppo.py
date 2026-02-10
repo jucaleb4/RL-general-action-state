@@ -57,18 +57,6 @@ class PPO(RLAlg):
         log_file = os.path.join(self.params['log_folder'], "seed=%i.csv" % self.params['seed'])
         self.save_episode_rewards(log_file, rwd_arr, len_arr)
 
-        # offline validation
-        self.env.reset_validation()
-        import ipdb; ipdb.set_trace()
-        for _ in range(self.params["validation_steps"]//model.n_steps):
-            model.collect_rollouts(model.env, callback_max_episodes, model.rollout_buffer, n_rollout_steps=model.n_steps, validate=True)
-        avg_V_arr = np.array(self.env.get_ep_avg_V(), dtype=float)
-        avg_agap_arr = np.array(self.env.get_ep_avg_agap(), dtype=float)
-        avg_V_lb_arr = avg_V_arr - (1.-self.params['gamma'])**(-1)*avg_agap_arr
-
-        validation_file = os.path.join(self.params['log_folder'], "offline_validation_seed=%i.csv" % self.params['seed'])
-        self.save_policy_validation(validation_file, avg_V_arr, avg_V_lb_arr)
-
     def save_episode_rewards(self, log_file, rwd_arr, len_arr):
         fmt="%1.2f,%1.2f"
         arr = np.vstack((np.atleast_2d(rwd_arr), np.atleast_2d(len_arr))).T
@@ -76,11 +64,3 @@ class PPO(RLAlg):
             fp.write(b"episode rewards,episode len\n")
             np.savetxt(fp, arr, fmt=fmt)
         print(f"Saved episode data to {log_file}")
-
-    def save_policy_validation(self, validation_file, avg_V_arr, avg_V_lb_arr):
-        fmt="%1.2f,%1.2f"
-        arr = np.vstack((np.atleast_2d(avg_V_arr), np.atleast_2d(avg_V_lb_arr))).T
-        with open(validation_file, "wb") as fp:
-            fp.write(b"avg_V,avg_V_star_lb\n")
-            np.savetxt(fp, arr, fmt=fmt)
-        print("Saved validation data to %s" % validation_file)

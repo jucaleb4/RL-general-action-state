@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_26_2024"
+DATE = "11_01_2024"
 EXP_ID = 0
-MAX_RUNS = 10
+MAX_RUNS = 5
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -86,7 +86,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     ct = 0
 
     # PDA Lunar_lander with rkhs and nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v3']
+    env_names = ['GridWorld-v1']
     max_steps_arr = [200_000, 500_000]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
@@ -97,13 +97,6 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     od['alg'] = 'pmd'
     od['pmd_stepsize_type'] = 'pda_1'
-
-    exp_metadata = ["id", "Alg", "Env Name", "Max Steps", "Max Iters", "FA type", "Breg div", "PE step", "PE alpha", "PO step"]
-    row_format ="{:>5}|{:>10}|{:>20}" + "|{:>10}"*6 + "|{:>10}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+10+20+10*6+10+len(exp_metadata)-1))
-
     for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
         od['env_name'] = env_name
         od['max_steps'] = min(_max_steps, max_steps)
@@ -121,11 +114,6 @@ def setup_setting_files(seed_0, max_trials, max_steps):
             od['pmd_pe_alpha'] = pe_alpha
             od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
 
-            print(row_format.format(ct, od['alg'], od['env_name'], od['max_steps'], od['max_iters'],
-                  od['pmd_fa_type'], od['pmd_policy_divergence'],
-                  od['pmd_pe_stepsize_base'], od['pmd_pe_alpha'],
-                  od['pmd_stepsize_base']))
-
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
             if not(os.path.exists(od["log_folder"])):
@@ -136,18 +124,10 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # SB3
     algs = ['ppo', 'dqn']
-    exp_metadata = ["id", "Alg", "Env Name"]
-    row_format ="{:>5}|{:>10}|{:>20}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+10+20+len(exp_metadata)-1))
-
     for env_name in env_names:
         od['env_name'] = env_name
         for alg in algs:
             od['alg'] = alg
-
-            print(row_format.format(ct, od['alg'], od['env_name']))
 
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
