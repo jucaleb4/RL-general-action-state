@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_28_2024"
-EXP_ID = 1
-MAX_RUNS = 3
+DATE = "02_12_2026"
+EXP_ID = 2
+MAX_RUNS = 14
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -40,7 +40,7 @@ def create_settings_and_logs_folders(od):
 def setup_setting_files(seed_0, max_trials, max_steps):
     od = OrderedDict([
         ('alg', 'pda'),
-        ('env_name', 'gym_examples/LQREnv-v0'),
+        ('env_name', 'InvertedPendulum-v4'),
         ('lunar_perturbed', False),
         ('seed', seed_0),
         ('parallel', False),
@@ -52,7 +52,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
         ('pmd_stepsize_type', 'pda_1'),
-        ('pmd_stepsize_base', 0.0001),
+        ('pmd_stepsize_base', 0.1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
         ('pmd_normalize_obs', False),
@@ -61,7 +61,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_pe_stepsize_type', 'constant'),
         ('pmd_pe_stepsize_base', 1e-3),
         ('pmd_pe_alpha', 1e-4),
-        ('pmd_pe_max_epochs', 10),
+        ('pmd_pe_max_epochs', 100),
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
@@ -71,7 +71,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pda_subprob_proj', False),
         ('pda_stop_nonconvex', False),
         ('pda_policy_noise', 1.),
-        ('pda_policy_min_noise', 0.01),
+        ('pda_policy_min_noise', 0.0),
         ('pda_plot_f', False),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
@@ -82,8 +82,6 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
-        ('ppo_lr', 0.0003),
-        ('ddpg_lr', 0.0003),
     ])
 
     create_settings_and_logs_folders(od)
@@ -91,26 +89,36 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
-    exp_metadata = ["id", 'env_name', 'Alg']
-    row_format ="{:>5}|{:>25}|{:>10}"
+    # PDA Lunar_lander with rkhs and nn 
+    envalg_names = [
+        ('Humanoid-v5', ['ppo', 'ddpg']), 
+    ]
+    lr_rates = [1e-4, 3e-4, 1e-3, 3e-3, 1e-3, 1e-2, 1e-1]
+
+    exp_metadata = ["id", 'Env', "Alg", "lr"]
+    row_format ="{:>5}|{:>25}|{:>10}|{:>10}"
     print("")
     print(row_format.format(*exp_metadata))
-    print("-" * (5+25+10+len(exp_metadata)-1))
+    print("-" * (5+25+10*2+len(exp_metadata)-1))
 
-    # SB3
-    algs = ['pda', 'ppo', 'ddpg']
-    for alg in algs:
-        od['alg'] = alg
+    for (env, alg_arr) in envalg_names:
+        od['env_name'] = env
+        for alg in alg_arr:
+            od['alg'] = alg
+            for lr in lr_rates:
+                lr_key = '%s_lr' % alg
+                od[lr_key] = lr
 
-        print(row_format.format(ct, od['env_name'], od['alg']))
+                print(row_format.format(ct, od['env_name'], od['alg'], od[lr_key]))
 
-        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-        if not(os.path.exists(od["log_folder"])):
-            os.makedirs(od["log_folder"])
-        with open(setting_fname, 'w', encoding='utf-8') as f:
-            json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
+                setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+                od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+                if not(os.path.exists(od["log_folder"])):
+                    os.makedirs(od["log_folder"])
+                with open(setting_fname, 'w', encoding='utf-8') as f:
+                    json.dump(od, f, ensure_ascii=False, indent=4)
+                ct += 1
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -134,12 +142,14 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 500_000
+        max_steps = 100_000
+        if args.mode == "full":
+            seed_0 = 1
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
-            max_trials = 2
+            max_trials = 1
 
         setup_setting_files(seed_0, max_trials, max_steps)
     else:
