@@ -28,7 +28,13 @@ class DQN(RLAlg):
             max_episodes=max_episodes, 
             verbose=1
         )
-        model = sb3.DQN("MlpPolicy", self.env, verbose=1, seed=self.params['seed'])
+        model = sb3.DQN(
+            "MlpPolicy", 
+            self.env, 
+            learning_rate=self.params['dqn_lr'],
+            verbose=1, 
+            seed=self.params['seed']
+        )
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()

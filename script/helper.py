@@ -15,16 +15,16 @@ def parse_sub_runs(sub_runs, total_runs):
 
     return start_run_id, end_run_id
 
-def get_parameter_settings(seed_0, n_seeds, n_iters, print_info, about):
-    od = OrderedDict([
+def get_parameter_settings(seed_0, max_trials, max_iters, max_eps, max_steps, print_info, about):
+    od = dict([
         ('alg', 'pmd'),
         ('env_name', 'LunarLander-v2'),
         ('lunar_perturbed', False),
-        ('seed', seed),
+        ('seed', seed_0),
         ('parallel', False),
-        ('max_trials', 1),
-        ('max_iters', 100),
-        ('max_episodes', 10_000),
+        ('max_trials', max_trials),
+        ('max_iters', max_iters),
+        ('max_episodes', max_eps),
         ('max_steps', max_steps),
         ('gamma', 0.99),
         ('pmd_rollout_len', 1024),
@@ -54,6 +54,7 @@ def get_parameter_settings(seed_0, n_seeds, n_iters, print_info, about):
         ('ppo_gae_lambda', 0.95),
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
+        ('ppo_normalize_adv', False)
     ])
 
     od_info = [
@@ -94,6 +95,7 @@ def get_parameter_settings(seed_0, n_seeds, n_iters, print_info, about):
         ('ppo_gae_lambda', 'PPO GAE additional discount (default: 0.95)'),
         ('ppo_clip_range', 'PPO clip value range (default: 0.2 [2X])'),
         ('ppo_max_grad_norm', 'NN max grad norm (-1 is inf)'),
+        ('ppo_normalize_adv', 'Normalize advantage in PPO'),
     ])
 
     if print_info:

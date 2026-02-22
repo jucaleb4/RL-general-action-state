@@ -5,8 +5,8 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_28_2024"
-EXP_ID = 1
+DATE = "12_29_2025"
+EXP_ID = 0
 MAX_RUNS = 3
 
 def parse_sub_runs(sub_runs):
@@ -39,20 +39,21 @@ def create_settings_and_logs_folders(od):
 
 def setup_setting_files(seed_0, max_trials, max_steps):
     od = OrderedDict([
-        ('alg', 'pda'),
-        ('env_name', 'gym_examples/LQREnv-v0'),
+        ('alg', 'pmd'),
+        ('env_name', 'LunarLander-v2'),
         ('lunar_perturbed', False),
         ('seed', seed_0),
         ('parallel', False),
         ('max_trials', max_trials),
-        ('max_iters', int(max_steps/1000)),
+        ('max_iters', max_steps),
         ('max_episodes', max_steps),
         ('max_steps', max_steps),
-        ('gamma', 0.99),
+        ('validation_steps', 4*max_steps),
+        ('gamma', 0.9),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
-        ('pmd_stepsize_type', 'pda_1'),
-        ('pmd_stepsize_base', 0.0001),
+        ('pmd_stepsize_type', 'pmd'),
+        ('pmd_stepsize_base', 1),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
         ('pmd_normalize_obs', False),
@@ -61,18 +62,14 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('pmd_pe_stepsize_type', 'constant'),
         ('pmd_pe_stepsize_base', 1e-3),
         ('pmd_pe_alpha', 1e-4),
-        ('pmd_pe_max_epochs', 10),
+        ('pmd_pe_max_epochs', 100),
         ('pmd_batch_size', 64),
         ('pmd_nn_update', 'adam'),
         ('pmd_nn_type', 'default'),
         ('pmd_max_grad_norm', 1),
         ('pmd_policy_divergence', 'tsallis'),
         ('pmd_sb3_policy', False),
-        ('pda_subprob_proj', False),
-        ('pda_stop_nonconvex', False),
-        ('pda_policy_noise', 1.),
-        ('pda_policy_min_noise', 0.01),
-        ('pda_plot_f', False),
+        ('pmd_validation_type', "POINT"),
         ('ppo_policy', "MlpPolicy"),
         ('ppo_lr', 0.0003),
         ('ppo_rollout_len', 2048),
@@ -82,8 +79,6 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
-        ('ppo_lr', 0.0003),
-        ('ddpg_lr', 0.0003),
     ])
 
     create_settings_and_logs_folders(od)
@@ -91,26 +86,57 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
-    exp_metadata = ["id", 'env_name', 'Alg']
-    row_format ="{:>5}|{:>25}|{:>10}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+25+10+len(exp_metadata)-1))
+    # PDA Lunar_lander with rkhs and nn 
+    env_names = ['LunarLander-v3']
+    max_steps_arr = [200_000, 500_000]
+    fa_types = ['linear']
+    pe_base_stepsizes = [0.01]
+    alphas = [1e-4]
+    policy_dvgs = ['kl']
+    env_step_multipliers = [0.1]
+    alg_step_multipliers = [0.1]
+
+    od['alg'] = 'pmd'
+    od['pmd_stepsize_type'] = 'pda_1'
+    for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
+        od['env_name'] = env_name
+        od['max_steps'] = min(_max_steps, max_steps)
+        od['max_iters'] = int(od['max_steps']/1000)
+        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
+                fa_types, 
+                policy_dvgs, 
+                pe_base_stepsizes,
+                alphas, 
+                alg_step_multipliers,
+        ):
+            od['pmd_fa_type'] = fa_type
+            od['pmd_policy_divergence'] = policy_dvg
+            od['pmd_pe_stepsize_base'] = pe_base_stepsize
+            od['pmd_pe_alpha'] = pe_alpha
+            od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
+
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
 
     # SB3
-    algs = ['pda', 'ppo', 'ddpg']
-    for alg in algs:
-        od['alg'] = alg
+    algs = ['ppo', 'dqn']
+    for env_name in env_names:
+        od['env_name'] = env_name
+        for alg in algs:
+            od['alg'] = alg
 
-        print(row_format.format(ct, od['env_name'], od['alg']))
-
-        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-        if not(os.path.exists(od["log_folder"])):
-            os.makedirs(od["log_folder"])
-        with open(setting_fname, 'w', encoding='utf-8') as f:
-            json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -134,12 +160,15 @@ if __name__ == "__main__":
     if args.setup:
         # TODO: Do we need to change this?
         max_trials = 10
-        max_steps = 500_000
+        max_steps = 50_000
+        if args.mode == "full":
+            max_trials = 10
+            seed_0 = 0
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
-            max_trials = 2
+            max_trials = 1
 
         setup_setting_files(seed_0, max_trials, max_steps)
     else:
