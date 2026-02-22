@@ -1,11 +1,14 @@
 import os
 import warnings
+import yaml
 
 import numpy as np
 
 import stable_baselines3 as sb3
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import StopTrainingOnMaxEpisodes
+
+import torch.nn as nn
 
 import gymnasium as gym
 import gym_examples
@@ -25,29 +28,51 @@ class PPO(RLAlg):
         # 3) use "gamma" in step() to calculate discounted reward
         self.env = Monitor(env=self.env, gamma=self.params["gamma"])
         # self.env = Monitor(env=self.env)
-    
+
         max_episodes = self.params["max_episodes"] if self.params["max_episodes"] > 0 else np.inf
         callback_max_episodes = StopTrainingOnMaxEpisodes(
             max_episodes=max_episodes, 
             verbose=1
         )
-        clip_range = self.params["ppo_clip_range"] if self.params["ppo_clip_range"] >= 0 else np.inf
-        max_grad_norm = self.params["ppo_max_grad_norm"] if self.params["ppo_max_grad_norm"] >= 0 else np.inf
-        model = sb3.PPO(
-            policy=self.params['ppo_policy'],
-            env=self.env, 
-            verbose=1, 
-            n_steps=self.params['ppo_rollout_len'],
-            learning_rate=self.params['ppo_lr'],
-            n_epochs=self.params['ppo_n_epochs'],
-            batch_size=self.params['ppo_batch_size'],
-            gamma=self.params['gamma'],
-            gae_lambda=self.params['ppo_gae_lambda'],
-            clip_range=clip_range,
-            max_grad_norm=max_grad_norm,
-            normalize_advantage=self.params["ppo_normalize_adv"],
-            seed=self.params["seed"]
-        )
+    
+        if self.params.get('zoo_file', '') != '':
+            with open(self.params['zoo_file']) as stream:
+                try:
+                    temp = yaml.safe_load(stream)
+                    zoo_dict = temp[self.params['env_name']]
+                except yaml.YAMLError as exc:
+                    print(exc)
+            model = sb3.PPO(
+                env=self.env, 
+                verbose=1, 
+                seed=self.params["seed"], 
+                gamma=self.params['gamma'],
+                policy_kwargs = dict( # TEMP - specific code
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=dict(pi=[256, 256], vf=[256, 256])
+                ),
+                **zoo_dict,
+            )
+        else:
+            clip_range = self.params["ppo_clip_range"] if self.params["ppo_clip_range"] >= 0 else np.inf
+            max_grad_norm = self.params["ppo_max_grad_norm"] if self.params["ppo_max_grad_norm"] >= 0 else np.inf
+            model = sb3.PPO(
+                policy=self.params['ppo_policy'],
+                env=self.env, 
+                verbose=1, 
+                n_steps=self.params['ppo_rollout_len'],
+                learning_rate=self.params['ppo_lr'],
+                n_epochs=self.params['ppo_n_epochs'],
+                batch_size=self.params['ppo_batch_size'],
+                gamma=self.params['gamma'],
+                gae_lambda=self.params['ppo_gae_lambda'],
+                clip_range=clip_range,
+                max_grad_norm=max_grad_norm,
+                normalize_advantage=self.params["ppo_normalize_adv"],
+                seed=self.params["seed"]
+            )
         model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
