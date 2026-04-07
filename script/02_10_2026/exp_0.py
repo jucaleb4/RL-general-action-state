@@ -28,8 +28,7 @@ def create_settings_and_logs_folders(od):
     Creates folder name to store settings and logs (if they do not exist).
     Returns base folder_name to store settings.
     """
-    folder_name = os.path.join("settings", DATE, "exp_%i" % EXP_ID)
-    if not(os.path.exists(folder_name)):
+    folder_name = os.path.join("settings", DATE, "exp_%i" % EXP_ID) if not(os.path.exists(folder_name)):
         os.makedirs(folder_name)
     for i in range(0,MAX_RUNS):
         log_folder_base = os.path.join("logs", DATE, "exp_%i" % EXP_ID)
