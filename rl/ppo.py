@@ -47,12 +47,12 @@ class PPO(RLAlg):
                 verbose=1, 
                 seed=self.params["seed"], 
                 gamma=self.params['gamma'],
-                policy_kwargs = dict( # TEMP - specific code
-                    log_std_init=-2,
-                    ortho_init=False,
-                    activation_fn=nn.ReLU,
-                    net_arch=dict(pi=[256, 256], vf=[256, 256])
-                ),
+                # policy_kwargs = dict( # TEMP - specific code
+                #     log_std_init=-2,
+                #     ortho_init=False,
+                #     activation_fn=nn.ReLU,
+                #     net_arch=dict(pi=[256, 256], vf=[256, 256])
+                # ),
                 **zoo_dict,
             )
         else:

@@ -533,14 +533,14 @@ InvertedDoublePendulum-v2:
   max_grad_norm: 0.5
   vf_coef: 0.695929
 
-InvertedPendulum-v2:
-  normalize: true
-  n_envs: 1
+InvertedPendulum-v4:
+  normalize_advantage: true # originally normalize
+  # n_envs: 1
   policy: 'MlpPolicy'
-  n_timesteps: !!float 1e6
+  # n_timesteps: !!float 1e6
   batch_size: 64
   n_steps: 32
-  gamma: 0.999
+  # gamma: 0.999
   learning_rate: 0.000222425
   ent_coef: 1.37976e-07
   clip_range: 0.4
