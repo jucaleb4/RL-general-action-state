@@ -1,5 +1,6 @@
 import os
 import warnings
+import yaml
 
 import numpy as np
 
@@ -30,16 +31,39 @@ class DDPG(RLAlg):
             verbose=1
         )
 
-        n_actions = self.env.action_space.shape[-1]
-        action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
-        model = sb3.DDPG(
-            "MlpPolicy", 
-            self.env, 
-            action_noise=action_noise,
-            verbose=1, 
-            seed=self.params['seed']
-        )
-        model.learn(max_iters, callback=callback_max_episodes)
+        if self.params.get('zoo_file', '') != '':
+            with open(self.params['zoo_file']) as stream:
+                try:
+                    temp = yaml.safe_load(stream)
+                    zoo_dict = temp[self.params['env_name']]
+                except yaml.YAMLError as exc:
+                    print(exc)
+
+            n_actions = self.env.action_space.shape[-1]
+            action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=zoo_dict['noise_std'] * np.ones(n_actions))
+            del zoo_dict['noise_std']
+            model = sb3.DDPG(
+                env=self.env, 
+                verbose=1, 
+                action_noise=action_noise,
+                seed=self.params["seed"], 
+                gamma=self.params['gamma'],
+                policy_kwargs = dict(net_arch=[400, 300]),
+                **zoo_dict,
+            )
+        else:
+
+            n_actions = self.env.action_space.shape[-1]
+            action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+            model = sb3.DDPG(
+                "MlpPolicy", 
+                self.env, 
+                learning_rate=self.params['ddpg_lr'],
+                action_noise=action_noise,
+                verbose=1, 
+                seed=self.params['seed']
+            )
+            model.learn(max_iters, callback=callback_max_episodes)
 
         rwd_arr = self.env.get_episode_rewards()
         len_arr = self.env.get_episode_lengths()

@@ -37,14 +37,14 @@ def create_settings_and_logs_folders(od):
         if not(os.path.exists(log_folder_base)):
             os.makedirs(log_folder_base)
 
-def setup_setting_files(seed, max_steps):
+def setup_setting_files(seed, max_trials, max_steps):
     od = OrderedDict([
         ('alg', 'pmd'),
-        ('env_name', 'LunarLander-v2'),
+        ('env_name', 'LunarLander-v3'),
         ('lunar_perturbed', False),
         ('seed', seed),
         ('parallel', False),
-        ('max_trials', 1),
+        ('max_trials', max_trials),
         ('max_iters', int(max_steps/1000)),
         ('max_episodes', max_steps),
         ('max_steps', max_steps),
@@ -85,7 +85,7 @@ def setup_setting_files(seed, max_steps):
     ct = 0
 
     # PDA Lunar_lander with nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v2']
+    env_names = ['GridWorld-v0', 'LunarLander-v3']
     base_stepsize_multiplier_0 = [1,0.1]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
@@ -93,6 +93,12 @@ def setup_setting_files(seed, max_steps):
     policy_dvgs = ['kl', 'kl', 'tsallis']
     base_stepsizes = [10,1,0.1]
     base_stepsize_multiplier = [0.1, 1, 1]
+
+    exp_metadata = ["id", 'Env', "Alg", "fa_type", "Bregman", "pe_lr", "pe_alpha", "lr"]
+    row_format ="{:>5}|{:>20}" + "|{:>10}" * 5 + "|{:>10}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+20+10*6+len(exp_metadata)-1))
 
     od['pmd_stepsize_type'] = 'pda_1'
     for env_name, base_mult_0 in zip(env_names, base_stepsize_multiplier_0):
@@ -112,6 +118,10 @@ def setup_setting_files(seed, max_steps):
             for base_stepsize in base_stepsizes:
                 od['pmd_stepsize_base'] = base_stepsize * base_mult * base_mult_0
 
+                print(row_format.format(ct, od['env_name'], od['alg'], od['pmd_fa_type'], 
+                      od['pmd_policy_divergence'], od['pmd_pe_stepsize_base'], 
+                      od['pmd_pe_alpha'], od['pmd_stepsize_base']))
+
                 setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
                 od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
                 if not(os.path.exists(od["log_folder"])):
@@ -128,7 +138,7 @@ if __name__ == "__main__":
         "--mode", 
         type=str, 
         default="work", 
-        choices=["validate", "work"],
+        choices=["validate", "work", "full"],
         help="Set up number of trials and max_step for various testing reasons"
     )
     parser.add_argument(
@@ -138,15 +148,19 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     seed_0 = 0
+    max_trials = 10
 
     if args.setup:
         # TODO: Do we need to change this?
         seed = 0
-        max_steps = 200_000
+        max_steps = 100_000
+        if args.mode == "validate":
+            max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
+            max_trials = 1
 
-        setup_setting_files(seed, max_steps)
+        setup_setting_files(seed, max_trials, max_steps)
     else:
         start_run_id, end_run_id = parse_sub_runs(args.sub_runs)
         folder_name = os.path.join("settings", DATE, 'exp_%i' % EXP_ID)

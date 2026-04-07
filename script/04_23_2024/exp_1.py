@@ -7,7 +7,7 @@ import json
 
 DATE = "04_23_2024"
 EXP_ID = 1
-MAX_RUNS = 6
+MAX_RUNS = 24
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -37,14 +37,14 @@ def create_settings_and_logs_folders(od):
         if not(os.path.exists(log_folder_base)):
             os.makedirs(log_folder_base)
 
-def setup_setting_files(seed, max_steps):
+def setup_setting_files(seed, max_trials, max_steps):
     od = OrderedDict([
         ('alg', 'pmd'),
-        ('env_name', 'LunarLander-v2'),
+        ('env_name', 'LunarLander-v3'),
         ('lunar_perturbed', False),
         ('seed', seed),
         ('parallel', False),
-        ('max_trials', 1),
+        ('max_trials', max_trials),
         ('max_iters', 100),
         ('max_episodes', 10_000),
         ('max_steps', max_steps),
@@ -77,6 +77,7 @@ def setup_setting_files(seed, max_steps):
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
+        ('dqn_lr', 1e-4),
     ])
 
     create_settings_and_logs_folders(od)
@@ -84,23 +85,35 @@ def setup_setting_files(seed, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
+    exp_metadata = ["id", 'Env', "Alg", "lr"]
+    row_format ="{:>5}|{:>20}|{:>10}|{:>10}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+20+10*2+len(exp_metadata)-1))
+
     # PDA Lunar_lander with nn 
-    env_names = ['GridWorld-v0', 'LunarLander-v2']
+    env_names = ['GridWorld-v0', 'LunarLander-v3']
     # algs = ['ppo', 'dqn', 'qlearn']
     algs = ['ppo', 'dqn'] # qlearn takes too long
+    lr_rates = [1e-4, 3e-4, 1e-3, 1e-3, 1e-2, 1e-1]
 
     for env_name in env_names:
         od['env_name'] = env_name
         for alg in algs:
             od['alg'] = alg
+            for lr in lr_rates:
+                lr_key = '%s_lr' % alg
+                od[lr_key] = lr
 
-            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-            if not(os.path.exists(od["log_folder"])):
-                os.makedirs(od["log_folder"])
-            with open(setting_fname, 'w', encoding='utf-8') as f:
-                json.dump(od, f, ensure_ascii=False, indent=4)
-            ct += 1
+                print(row_format.format(ct, od['env_name'], od['alg'], od[lr_key]))
+
+                setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+                od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+                if not(os.path.exists(od["log_folder"])):
+                    os.makedirs(od["log_folder"])
+                with open(setting_fname, 'w', encoding='utf-8') as f:
+                    json.dump(od, f, ensure_ascii=False, indent=4)
+                ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -110,7 +123,7 @@ if __name__ == "__main__":
         "--mode", 
         type=str, 
         default="work", 
-        choices=["validate", "work"],
+        choices=["validate", "work", "full"],
         help="Set up number of trials and max_step for various testing reasons"
     )
     parser.add_argument(
@@ -120,15 +133,19 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     seed_0 = 0
+    max_trials = 10
 
     if args.setup:
         # TODO: Do we need to change this?
         seed = 0
-        max_steps = 200_000
+        max_steps = 100_000
+        if args.mode == "validate":
+            max_trials = 1
         if args.mode == "work":
             max_steps = 10_000
+            max_trials = 1
 
-        setup_setting_files(seed, max_steps)
+        setup_setting_files(seed, max_trials, max_steps)
     else:
         start_run_id, end_run_id = parse_sub_runs(args.sub_runs)
         folder_name = os.path.join("settings", DATE, 'exp_%i' % EXP_ID)

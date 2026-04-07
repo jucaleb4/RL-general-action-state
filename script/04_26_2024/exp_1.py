@@ -97,6 +97,12 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     n_epochs_list = [10,100]
     policy_noises = [1.,0.]
 
+    exp_metadata = ["id", 'Alg', "pi noise", "PE epochs", "PO eta", "PO step"]
+    row_format ="{:>5}|{:>10}" + "|{:>10}"*3 + "|{:>10}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+10+10*4+len(exp_metadata)-1))
+
     for policy_noise in policy_noises:
         od['pda_policy_noise'] = policy_noise
         for n_epochs in n_epochs_list:
@@ -105,6 +111,10 @@ def setup_setting_files(seed_0, max_trials, max_steps):
                 od['pmd_stepsize_base'] = stepsize_base
                 for stepsize_type in stepsize_types:
                     od['pmd_stepsize_type'] = stepsize_type
+
+
+                    print(row_format.format(ct, od['alg'], od['pda_policy_noise'], od['pmd_pe_max_epochs'], od['pmd_stepsize_base'], od['pmd_stepsize_type']))
+
                     setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
                     od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
                     if not(os.path.exists(od["log_folder"])):
@@ -115,10 +125,19 @@ def setup_setting_files(seed_0, max_trials, max_steps):
 
     # SB3
     algs = ['ppo', 'ddpg']
+    algs = ['ppo', 'dqn']
+    exp_metadata = ["id", "Alg", "Env Name"]
+    row_format ="{:>5}|{:>10}|{:>20}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+10+20+len(exp_metadata)-1))
+
     for env_name in env_names:
         od['env_name'] = env_name
         for alg in algs:
             od['alg'] = alg
+
+            print(row_format.format(ct, od['alg'], od['env_name']))
 
             setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
             od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)

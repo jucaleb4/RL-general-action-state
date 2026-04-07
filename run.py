@@ -50,11 +50,12 @@ def main(params, output={}):
             env = gym.make(
                 full_env_name,
                 # render_mode="human",
-                max_episode_steps=int(1e9), # can change length here!
-                # size=10,
-                length=10,
-                # num_obstacles=10,
-                n_traps=10,
+                # max_episode_steps=int(1e9), # too long!
+                max_episode_steps=int(5e3), # can change length here!
+                size=10,
+                # length=10,
+                num_obstacles=10,
+                # n_traps=10,
             )
         else:
             full_env_name = env_name

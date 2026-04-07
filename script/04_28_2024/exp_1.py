@@ -82,6 +82,8 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('ppo_clip_range', 0.2),
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
+        ('ppo_lr', 0.0003),
+        ('ddpg_lr', 0.0003),
     ])
 
     create_settings_and_logs_folders(od)
@@ -89,10 +91,18 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
+    exp_metadata = ["id", 'env_name', 'Alg']
+    row_format ="{:>5}|{:>25}|{:>10}"
+    print("")
+    print(row_format.format(*exp_metadata))
+    print("-" * (5+25+10+len(exp_metadata)-1))
+
     # SB3
     algs = ['pda', 'ppo', 'ddpg']
     for alg in algs:
         od['alg'] = alg
+
+        print(row_format.format(ct, od['env_name'], od['alg']))
 
         setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
         od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)

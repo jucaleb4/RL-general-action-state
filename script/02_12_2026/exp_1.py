@@ -5,9 +5,9 @@ import argparse
 from collections import OrderedDict
 import json
 
-DATE = "04_28_2024"
-EXP_ID = 0
-MAX_RUNS = 4
+DATE = "02_12_2026"
+EXP_ID = 1
+MAX_RUNS = 5
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -40,7 +40,7 @@ def create_settings_and_logs_folders(od):
 def setup_setting_files(seed_0, max_trials, max_steps):
     od = OrderedDict([
         ('alg', 'pda'),
-        ('env_name', 'InvertedPendulum-v4'),
+        ('env_name', 'Humanoid-v5'),
         ('lunar_perturbed', False),
         ('seed', seed_0),
         ('parallel', False),
@@ -51,8 +51,8 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('gamma', 0.99),
         ('pmd_rollout_len', 1024),
         ('pmd_fa_type', "nn"),
-        ('pmd_stepsize_type', 'pda_2'),
-        ('pmd_stepsize_base', 1),
+        ('pmd_stepsize_type', 'pda_1'),
+        ('pmd_stepsize_base', 10),
         ('pmd_use_adv', True),
         ('pmd_normalize_sa_val', False),
         ('pmd_normalize_obs', False),
@@ -83,7 +83,7 @@ def setup_setting_files(seed_0, max_trials, max_steps):
         ('ppo_max_grad_norm', -1),
         ('ppo_normalize_adv', False),
         ('ppo_lr', 0.01),
-        ('ddpg_lr', 0.001),
+        ('ddpg_lr', 0.0003),
     ])
 
     create_settings_and_logs_folders(od)
@@ -91,14 +91,14 @@ def setup_setting_files(seed_0, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
-    exp_metadata = ["id", 'env_name', 'Alg', 'Zoo file']
+    exp_metadata = ["id", 'env_name', 'Alg', 'zoo_file']
     row_format ="{:>5}|{:>25}|{:>10}|{:>15}"
     print("")
     print(row_format.format(*exp_metadata))
     print("-" * (5+25+10+15+len(exp_metadata)-1))
 
-    algs_zoofiles = [('pda',''), ('ppo',''), ('ddpg',''), ('ppo','zoo/ppo.yml')]
-    for (alg,zoo_file) in algs_zoofiles:
+    algs_zoofiles = [('pda', ''), ('ppo', ''), ('ddpg', ''), ('ppo', os.path.join('zoo','ppo.yml')), ('ddpg', os.path.join('zoo','ddpg.yml'))]
+    for alg,zoo_file in algs_zoofiles:
         od['alg'] = alg
         od['zoo_file'] = zoo_file
 
@@ -130,16 +130,18 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    seed_0 = 0
+    seed_0 = 1
     if args.setup:
         # TODO: Do we need to change this?
-        max_trials = 10
-        max_steps = 150_000
+        max_trials = 4
+        max_steps = 100_000
         if args.mode == "validate":
+            seed_0 = 0
             max_trials = 1
         if args.mode == "work":
+            seed_0 = 0
             max_steps = 10_000
-            max_trials = 2
+            max_trials = 1
 
         setup_setting_files(seed_0, max_trials, max_steps)
     else:
