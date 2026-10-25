@@ -78,6 +78,8 @@ def main(params, output={}):
                 # n_traps=10,
             )
         elif "ComputedTomography" in env_name:
+            import warnings
+            warnings.filterwarnings("ignore")
             full_env_name = os.path.join("gym_examples", env_name)
             env = gym.make(
                 full_env_name,
@@ -149,7 +151,7 @@ def main(params, output={}):
 
     if alg_name in ["pmd", "pda"]:
         # output[params['seed']] = alg.learn(params["max_iters"])
-        alg.learn(params["max_iters"])
+        alg.learn(params["max_iters"], params["time_limit"])
     elif alg_name == "qlearn":
         alg._learn(params["max_steps"], max_episodes=params["max_steps"])
     else:

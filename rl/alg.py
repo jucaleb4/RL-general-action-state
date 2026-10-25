@@ -13,10 +13,10 @@ class RLAlg(ABC):
         self.rng = np.random.default_rng(params.get("seed", None))
         self.warned_about_sample = False
 
-    def learn(self, n_iter: int=100):
+    def learn(self, n_iter: int=100, time_limit: int=3_600):
         self.t = 0
         try:
-            return self._learn(n_iter)
+            return self._learn(n_iter, time_limit)
         except KeyboardInterrupt:
             print(f"Terminated early at iteration {self.t}")
 

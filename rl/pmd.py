@@ -52,7 +52,7 @@ class FOPO(RLAlg):
         self.prev_lam_t = 0
         self._last_state_done = False
 
-    def _learn(self, max_iter):
+    def _learn(self, max_iter, max_time=np.inf):
         """ Runs PMD algorithm for `max_iter`s """
         checkpoint = np.linspace(0, max_iter, num=min(10, max_iter), dtype=int)
         self.s_time = time.time()
@@ -85,6 +85,10 @@ class FOPO(RLAlg):
                 # self.save_policy_change()
 
             if self.n_episodes >= self.max_episodes or self.n_step >= self.max_steps:
+                break
+
+            if time.time() - self.s_time > max_time:
+                print("Breaking early due to %ds time limit" % max_time)
                 break
 
         self.save_episode_reward_and_len()

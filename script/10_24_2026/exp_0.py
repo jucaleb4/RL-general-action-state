@@ -1,6 +1,7 @@
 import os
 import sys
 
+import itertools
 import argparse
 from collections import OrderedDict
 import json
@@ -11,7 +12,7 @@ from rl import utils
 
 DATE = "10_24_2026"
 EXP_ID = 0
-MAX_RUNS = 5
+MAX_RUNS = 12 
 
 def parse_sub_runs(sub_runs):
     start_run_id, end_run_id = 0, MAX_RUNS-1
@@ -47,6 +48,7 @@ def setup_setting_files(seed, max_trials, max_steps):
         ('env_name', 'ComputedTomography-v0'),
         ('seed', seed),
         ('parallel', False),
+        ('time_limit', 3_600),
         ('max_trials', max_trials),
         ('max_iters', max_steps),
         ('max_episodes', max_steps),
@@ -110,54 +112,80 @@ def setup_setting_files(seed, max_trials, max_steps):
     setting_folder_base = os.path.join("settings", DATE, "exp_%s" % EXP_ID)
     ct = 0
 
+    # loop over problem instances
+    reward_type_arr = [
+        utils.RewardType.FWD_RND_1,
+        utils.RewardType.PNSR_INCREMENTAL,
+    ]
+    image_type_arr = [
+        utils.ImageType.LINE_FIXED, 
+        utils.ImageType.MIXED,
+    ]
+
     # PDA Lunar_lander with nn 
-    env_names = ['ComputedTomography-v0']
-    max_steps_arr = [200_000, 500_000]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
     alphas = [1e-4, 0, 0]
     policy_dvgs = ['kl', 'kl', 'tsallis']
-    env_step_multipliers = [0.1,1]
-    alg_step_multipliers = [0.1,1,1]
+    lr_arr = [1.0, 0.1, 0.1]
 
-    od['alg'] = 'pmd'
-    od['pmd_stepsize_type'] = 'pda_1'
-
-    exp_metadata = ["id", "Alg", "Env Name", "Max Steps", "Max Iters", "FA type", "Breg div", "PE step", "PE alpha", "PO step"]
-    row_format ="{:>5}|{:>10}|{:>20}" + "|{:>10}"*6 + "|{:>10}"
+    exp_metadata = ["id", "env", "rwd_type", "img_type", "Env", "Alg", "fa_type", "Bregman"]
+    row_format ="{:>5}|{:>25}|{:>20}|{:>15}" + "|{:>10}" * 2 + "|{:>10}"
     print("")
     print(row_format.format(*exp_metadata))
-    print("-" * (5+10+20+10*6+10+len(exp_metadata)-1))
+    print("-" * (5+60+10*3+len(exp_metadata)-1))
 
-    for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
-        od['env_name'] = env_name
-        od['max_steps'] = min(_max_steps, max_steps)
-        od['max_iters'] = int(od['max_steps']/1000)
-        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
-                fa_types, 
-                policy_dvgs, 
-                pe_base_stepsizes,
-                alphas, 
-                alg_step_multipliers,
-        ):
-            od['pmd_fa_type'] = fa_type
-            od['pmd_policy_divergence'] = policy_dvg
-            od['pmd_pe_stepsize_base'] = pe_base_stepsize
-            od['pmd_pe_alpha'] = pe_alpha
-            od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
+    od['pmd_stepsize_type'] = 'pda_1'
+    od['alg'] = 'pmd'
+    for reward_type, image_type, (fa_type, policy_dvg, pe_base_stepsize, pe_alpha, lr) in itertools.product(
+        reward_type_arr, image_type_arr, zip(
+            fa_types, 
+            policy_dvgs, 
+            pe_base_stepsizes, 
+            alphas, 
+            lr_arr,
+    )):
+        od["reward_type"] = reward_type.value
+        od["image_type"] = image_type.value
 
-            print(row_format.format(ct, od['alg'], od['env_name'], od['max_steps'], od['max_iters'],
-                  od['pmd_fa_type'], od['pmd_policy_divergence'],
-                  od['pmd_pe_stepsize_base'], od['pmd_pe_alpha'],
-                  od['pmd_stepsize_base']))
+        od['pmd_fa_type'] = fa_type
+        od['pmd_policy_divergence'] = policy_dvg
+        od['pmd_pe_stepsize_base'] = pe_base_stepsize
+        od['pmd_pe_alpha'] = pe_alpha
+        od['pmd_stepsize_base'] = lr
 
-            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-            if not(os.path.exists(od["log_folder"])):
-                os.makedirs(od["log_folder"])
-            with open(setting_fname, 'w', encoding='utf-8') as f:
-                json.dump(od, f, ensure_ascii=False, indent=4)
-            ct += 1
+        print(row_format.format(ct, od['env_name'], reward_type.name, image_type.name, od['alg'], od['pmd_fa_type'], od['pmd_policy_divergence']))
+
+        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+        if not(os.path.exists(od["log_folder"])):
+            os.makedirs(od["log_folder"])
+        with open(setting_fname, 'w', encoding='utf-8') as f:
+            json.dump(od, f, ensure_ascii=False, indent=4)
+        ct += 1
+
+    # exp_metadata = ["id", "Env", "Alg"]
+    # row_format ="{:>5}|{:>25}|{:10}"
+    # print("")
+    # print(row_format.format(*exp_metadata))
+    # print("-" * (5+25+10+len(exp_metadata)-1))
+    # alg_arr = ['ppo', 'dqn']
+    # lr_arr = [0.001, 0.0003]
+    # # lr_arr = [3e-4, 1e-4]
+    # for alg, lr in zip(alg_arr, lr_arr):
+    #     od['alg'] = alg
+    #     lr_key = "%s_lr" % alg
+    #     od[lr_key] = lr
+    # 
+    #     print(row_format.format(ct, od['env_name'], od['alg']))
+    # 
+    #     setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+    #     od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+    #     if not(os.path.exists(od["log_folder"])):
+    #         os.makedirs(od["log_folder"])
+    #     with open(setting_fname, 'w', encoding='utf-8') as f:
+    #         json.dump(od, f, ensure_ascii=False, indent=4)
+    #     ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -166,7 +194,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode", 
         type=str, 
-        default="work", 
+        default="validate", 
         choices=["validate", "work", "full"],
         help="Set up number of trials and max_step for various testing reasons"
     )
@@ -186,7 +214,7 @@ if __name__ == "__main__":
         if args.mode == "validate":
             max_trials = 1
         if args.mode == "work":
-            max_steps = 10_000
+            max_steps = 100_000
             max_trials = 1
 
         setup_setting_files(seed, max_trials, max_steps)
