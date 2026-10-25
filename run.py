@@ -28,6 +28,26 @@ from rl import PDAGeneralStateAction
 
 from rl import utils
 
+import time
+from logger import BasicLogger
+
+import numpy as np
+
+def get_loggers(env, settings, is_validation=False):
+    validation_addon = "validation_" if is_validation else ""
+    logger = BasicLogger(
+        fname=os.path.join(settings["log_folder"], "%sseed=%d.csv" % (validation_addon, settings['seed'])), 
+        keys=["episode", "time (sec)", "episodic reward", "entropy", "l_1"],
+        dtypes=['d'] + ['f'] * 4
+    )
+    image_and_action_logger = BasicLogger(
+        fname=os.path.join(settings["log_folder"], "%simg_action_seed=%d.csv" % (validation_addon, settings['seed'])), 
+        keys=["image_id", "action"],
+        dtypes=['d', 'd'],
+    ) 
+
+    return logger, image_and_action_logger
+
 def dictionary_clear_nones(dt):
     """ Returns a copied dictionary and removes keys whose value is None """
     return dict({k: v for k, v in dt.items() if v is not None})
@@ -57,6 +77,21 @@ def main(params, output={}):
                 num_obstacles=10,
                 # n_traps=10,
             )
+        elif "ComputedTomography" in env_name:
+            full_env_name = os.path.join("gym_examples", env_name)
+            env = gym.make(
+                full_env_name,
+                seed=params['seed'], 
+                n_images=params['n_images'], 
+                num_angles=params['n_angles'], 
+                image_size=params['image_size'], 
+                action_size=params['action_size'],
+                corruption_percentage=params['corruption_percentage'], 
+                pnsr_reg=params['pnsr_reg'], 
+                image_type=utils.ImageType(params['image_type']), 
+                reward_type=utils.RewardType(params['reward_type']),
+                angle_in_degrees=True,
+            )
         else:
             full_env_name = env_name
             env = gym.make(
@@ -74,6 +109,8 @@ def main(params, output={}):
     # env = gym.wrappers.NormalizeObservation(env)
 
     if isinstance(env.observation_space, gym.spaces.Dict):
+        env = gym.wrappers.FlattenObservation(env)
+    if isinstance(env.observation_space, gym.spaces.Box) and len(env.observation_space.shape) > 1:
         env = gym.wrappers.FlattenObservation(env)
 
     (obs_is_finite, obs_dim, _) = utils.get_space_property(env.observation_space)
@@ -118,6 +155,45 @@ def main(params, output={}):
     else:
         # output[params['seed']] = alg.learn(params["max_steps"])
         alg.learn(params["max_steps"])
+
+    # validation for tomography or pytchography
+    if ("ComputedTomography" in env_name) or ("Pytchography" in env_name):
+        imaging_validation(env, alg, params)
+
+def imaging_validation(env, alg, settings, n_validations=30):
+    # use full complete to judge how good the scans are
+    env.reward_type = utils.RewardType.FWD_RND_COMPLETE_FULL
+    logger, image_and_action_logger = get_loggers(env, settings, is_validation=True)
+    s_time = time.time()
+
+    for e in range(n_validations):
+        # reset the environment and the action vector
+        s_t, _ = env.reset()
+    
+        # track the total rewards
+        cum_rwd = 0
+        
+        t = 0
+        while True:
+            a_t = alg.policy_sample(s_t)
+            next_state, rwd, done, _, info = env.step(a_t)
+            image_and_action_logger.log(info['image_id'], a_t)
+
+            t += 1
+            cum_rwd += rwd
+            state = next_state
+            
+            if done:
+                break
+
+        e_time = time.time() - s_time
+        pi_s = alg._get_policy(state)
+        entropy_at_s = -np.sum(np.multiply(pi_s, np.log(pi_s)))
+        dist_to_uni_in_l_1 = np.sum(np.abs(pi_s - 1./len(pi_s)))
+        logger.log(e, e_time, cum_rwd, entropy_at_s, dist_to_uni_in_l_1)
+
+    logger.save()
+    image_and_action_logger.save()
 
 def main_with_open_settings(settings_file):
     """

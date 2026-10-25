@@ -24,6 +24,9 @@ Starting after, here we recommend using the mode `full` for a full test run.
 - `02_12_2026/exp_1`: Run PDA on Humanoid-v5
 - `02_12_2026/exp_2`: Tuning PPO, DDPG on Humanoid-v5
 - `02_12_2026/exp_3`: Run PPO, DDPG on Humanoid-v5
+- `10_24_2026/exp_0`: Run PDA on SeqED - tomography - shapes
+- `10_24_2026/exp_1`: Run PDA on SeqED - pytchography - shapes
+- `10_24_2026/exp_2`: Run PDA on SeqED - pytchography - images
 
 ## Running scripts
 TODO

@@ -1,6 +1,7 @@
 import warnings 
 
 import itertools
+from enum import Enum
 
 import numpy as np
 import numpy.linalg as la
@@ -290,3 +291,28 @@ def get_all_grid_pts(lows, highs):
     meshgrid_arr = np.c_[meshgrid_separate_dim]
     # reshape so the dimension len(lows) is 2nd dim, and collapse other axes to 1st dim
     return np.reshape(meshgrid_arr, newshape=(len(lows),-1)).T
+
+# for SeqED
+class ImageType(Enum):
+    MIXED = 0
+    TRIANGLE = 1
+    TRIANGLE_THIRTY = 2
+    TRIANGLE_FIXED = 3
+    LINE = 4
+    LINE_THIRTY = 5
+    LINE_FIXED = 6
+    SKIMAGE = 7
+
+class RewardType(Enum):
+    PNSR_E2E = 0
+    PNSR_INCREMENTAL = 1
+    FWD_E2E = 2
+    FWD_INCREMENTAL = 3
+    FWD_RND_1 = 4
+    FWD_RND_10 = 5
+    FWD_RND_COMPLETE_10 = 6
+    FWD_RND_COMPLETE_FULL = 7
+    FWD_INC_RND_1 = 8
+    FWD_INC_RND_10 = 9
+    FWD_RND_1_REG = 10
+    PNSR_ADD = 11
