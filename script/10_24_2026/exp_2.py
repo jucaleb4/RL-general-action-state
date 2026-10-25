@@ -11,7 +11,7 @@ sys.path.insert(0, parent_dir)
 from rl import utils
 
 DATE = "10_24_2026"
-EXP_ID = 1
+EXP_ID = 2
 MAX_RUNS = 48
 
 def parse_sub_runs(sub_runs):
