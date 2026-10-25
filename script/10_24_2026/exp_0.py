@@ -111,65 +111,53 @@ def setup_setting_files(seed, max_trials, max_steps):
     ct = 0
 
     # PDA Lunar_lander with nn 
+    env_names = ['ComputedTomography-v0']
+    max_steps_arr = [200_000, 500_000]
     fa_types = ['linear', 'nn', 'nn']
     pe_base_stepsizes = [0.01, 0.001, 0.001]
     alphas = [1e-4, 0, 0]
     policy_dvgs = ['kl', 'kl', 'tsallis']
-    lr_arr = [1.0, 0.1, 0.1]
+    env_step_multipliers = [0.1,1]
+    alg_step_multipliers = [0.1,1,1]
 
-    exp_metadata = ["id", "Env", "Alg", "fa_type", "Bregman"]
-    row_format ="{:>5}|{:>25}" + "|{:>10}" * 2 + "|{:>10}"
-    print("")
-    print(row_format.format(*exp_metadata))
-    print("-" * (5+25+10*3+len(exp_metadata)-1))
-
-    od['pmd_stepsize_type'] = 'pda_1'
     od['alg'] = 'pmd'
-    for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, lr in zip(
-            fa_types, 
-            policy_dvgs, 
-            pe_base_stepsizes, 
-            alphas, 
-            lr_arr,
-    ):
-        od['pmd_fa_type'] = fa_type
-        od['pmd_policy_divergence'] = policy_dvg
-        od['pmd_pe_stepsize_base'] = pe_base_stepsize
-        od['pmd_pe_alpha'] = pe_alpha
-        od['pmd_stepsize_base'] = lr
+    od['pmd_stepsize_type'] = 'pda_1'
 
-        print(row_format.format(ct, od['env_name'], od['alg'], od['pmd_fa_type'], od['pmd_policy_divergence']))
-
-        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-        if not(os.path.exists(od["log_folder"])):
-            os.makedirs(od["log_folder"])
-        with open(setting_fname, 'w', encoding='utf-8') as f:
-            json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
-
-    exp_metadata = ["id", "Env", "Alg"]
-    row_format ="{:>5}|{:>25}|{:10}"
+    exp_metadata = ["id", "Alg", "Env Name", "Max Steps", "Max Iters", "FA type", "Breg div", "PE step", "PE alpha", "PO step"]
+    row_format ="{:>5}|{:>10}|{:>20}" + "|{:>10}"*6 + "|{:>10}"
     print("")
     print(row_format.format(*exp_metadata))
-    print("-" * (5+25+10+len(exp_metadata)-1))
-    alg_arr = ['ppo', 'dqn']
-    lr_arr = [0.001, 0.0003]
-    # lr_arr = [3e-4, 1e-4]
-    for alg, lr in zip(alg_arr, lr_arr):
-        od['alg'] = alg
-        lr_key = "%s_lr" % alg
-        od[lr_key] = lr
+    print("-" * (5+10+20+10*6+10+len(exp_metadata)-1))
 
-        print(row_format.format(ct, od['env_name'], od['alg']))
+    for env_name, env_step_mult, _max_steps in zip(env_names, env_step_multipliers, max_steps_arr):
+        od['env_name'] = env_name
+        od['max_steps'] = min(_max_steps, max_steps)
+        od['max_iters'] = int(od['max_steps']/1000)
+        for fa_type, policy_dvg, pe_base_stepsize, pe_alpha, alg_step_mult in zip(
+                fa_types, 
+                policy_dvgs, 
+                pe_base_stepsizes,
+                alphas, 
+                alg_step_multipliers,
+        ):
+            od['pmd_fa_type'] = fa_type
+            od['pmd_policy_divergence'] = policy_dvg
+            od['pmd_pe_stepsize_base'] = pe_base_stepsize
+            od['pmd_pe_alpha'] = pe_alpha
+            od['pmd_stepsize_base'] = env_step_mult * alg_step_mult
 
-        setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
-        od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
-        if not(os.path.exists(od["log_folder"])):
-            os.makedirs(od["log_folder"])
-        with open(setting_fname, 'w', encoding='utf-8') as f:
-            json.dump(od, f, ensure_ascii=False, indent=4)
-        ct += 1
+            print(row_format.format(ct, od['alg'], od['env_name'], od['max_steps'], od['max_iters'],
+                  od['pmd_fa_type'], od['pmd_policy_divergence'],
+                  od['pmd_pe_stepsize_base'], od['pmd_pe_alpha'],
+                  od['pmd_stepsize_base']))
+
+            setting_fname = os.path.join(setting_folder_base,  "run_%s.json" % ct)
+            od['log_folder'] = os.path.join(log_folder_base, "run_%s" % ct)
+            if not(os.path.exists(od["log_folder"])):
+                os.makedirs(od["log_folder"])
+            with open(setting_fname, 'w', encoding='utf-8') as f:
+                json.dump(od, f, ensure_ascii=False, indent=4)
+            ct += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
