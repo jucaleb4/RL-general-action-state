@@ -94,6 +94,33 @@ def main(params, output={}):
                 reward_type=utils.RewardType(params['reward_type']),
                 angle_in_degrees=True,
             )
+        elif "Ptychography" in env_name:
+            import warnings
+            warnings.filterwarnings("ignore")
+            full_env_name = os.path.join("gym_examples", env_name)
+            import ipdb; ipdb.set_trace()
+            env = gym.make(
+                full_env_name,
+                seed=params['seed'], 
+                n_images=params['n_images'], 
+                num_angles=params['n_angles'], 
+                image_size=params['image_size'], 
+                action_size=params['action_size'],
+                probe_size=params['probe_size'],
+                corruption_photons=params['corruption_photons'], 
+                pnsr_reg=params['pnsr_reg'], 
+                image_type=utils.ImageType(params['image_type']), 
+                reward_type=utils.RewardType(params['reward_type']),
+                penalty=params['penalty'],
+                solver=params['solver'],
+                solver_iters=params['solver_iters'],
+                periodic=params['periodic'],
+                jitter=params['jitter'],
+                allow_repeats=params['allow_repeats'],
+                state_mode=params['state_mode'],
+                warm_start=params['warm_start'],
+                blind=params['blind'],
+            )
         else:
             full_env_name = env_name
             env = gym.make(
