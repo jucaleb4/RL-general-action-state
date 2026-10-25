@@ -98,12 +98,11 @@ def main(params, output={}):
             import warnings
             warnings.filterwarnings("ignore")
             full_env_name = os.path.join("gym_examples", env_name)
-            import ipdb; ipdb.set_trace()
             env = gym.make(
                 full_env_name,
                 seed=params['seed'], 
                 n_images=params['n_images'], 
-                num_angles=params['n_angles'], 
+                num_scans=params['n_angles'], 
                 image_size=params['image_size'], 
                 action_size=params['action_size'],
                 probe_size=params['probe_size'],

@@ -85,7 +85,7 @@ def setup_setting_files(seed, max_trials, max_steps):
         # Computed Tomograph variables
         ("n_images", 200), # shapes: 64, skimage: 200
         ("n_angles", 24),
-        ("image_size", 128), 
+        ("image_size", 256), 
         ("action_size", 256), 
         ("scan_type", "ptycho"),
         ("image_type", utils.ImageType.MIXED.value),
@@ -132,11 +132,11 @@ def setup_setting_files(seed, max_trials, max_steps):
     policy_dvgs = ['kl', 'kl', 'tsallis']
     lr_arr = [1.0, 0.1, 0.1]
 
-    exp_metadata = ["id", "blind", "rwd_type", "img_type", "penalty", "solver_iter", "Env", "Alg", "fa_type", "Bregman"]
-    row_format ="{:>5}|{:>25}|{:>10}|{:>20}|{:>15}|{:>10}|{:>10}" + "|{:>10}" * 2 + "|{:>10}"
+    exp_metadata = ["id", "env_name", "blind", "rwd_type", "img_type", "penalty", "solver_iter", "Env", "Alg", "fa_type", "Bregman"]
+    row_format ="{:>5}|{:>20}|{:>5}|{:>20}|{:>15}|{:>10}|{:>10}" + "|{:>10}" * 2 + "|{:>10}"
     print("")
     print(row_format.format(*exp_metadata))
-    print("-" * (5+30+60+10*3+len(exp_metadata)-1))
+    print("-" * (5+20+60+10*3+len(exp_metadata)-1))
 
     od['pmd_stepsize_type'] = 'pda_1'
     od['alg'] = 'pmd'
