@@ -185,7 +185,7 @@ def main(params, output={}):
         alg.learn(params["max_steps"])
 
     # validation for tomography or pytchography
-    if ("ComputedTomography" in env_name) or ("Pytchography" in env_name):
+    if ("ComputedTomography" in env_name) or ("Ptychography" in env_name):
         imaging_validation(env, alg, params)
 
 def imaging_validation(env, alg, settings, n_validations=30):
