@@ -186,12 +186,61 @@ def main(params, output={}):
 
     # validation for tomography or pytchography
     if ("ComputedTomography" in env_name) or ("Ptychography" in env_name):
-        imaging_validation(env, alg, params)
+        imaging_validation(alg, params)
 
-def imaging_validation(env, alg, settings, n_validations=30):
+def imaging_validation(alg, params, n_validations=30):
     # use full complete to judge how good the scans are
-    env.reward_type = utils.RewardType.FWD_RND_COMPLETE_FULL
-    logger, image_and_action_logger = get_loggers(env, settings, is_validation=True)
+    # env.set_reward_type(utils.RewardType.FWD_RND_COMPLETE_FULL)
+    env_name = params['env_name']
+    if "ComputedTomography" in env_name:
+        import warnings
+        warnings.filterwarnings("ignore")
+        full_env_name = os.path.join("gym_examples", env_name)
+        env = gym.make(
+            full_env_name,
+            seed=params['seed'], 
+            n_images=params['n_images'], 
+            num_angles=params['n_angles'], 
+            image_size=params['image_size'], 
+            action_size=params['action_size'],
+            corruption_percentage=params['corruption_percentage'], 
+            pnsr_reg=params['pnsr_reg'], 
+            image_type=utils.ImageType(params['image_type']), 
+            reward_type=utils.RewardType.FWD_RND_COMPLETE_FULL,
+            angle_in_degrees=True,
+        )
+    else:
+        import warnings
+        warnings.filterwarnings("ignore")
+        full_env_name = os.path.join("gym_examples", env_name)
+        env = gym.make(
+            full_env_name,
+            seed=params['seed'], 
+            n_images=params['n_images'], 
+            num_scans=params['n_angles'], 
+            image_size=params['image_size'], 
+            action_size=params['action_size'],
+            probe_size=params['probe_size'],
+            corruption_photons=params['corruption_photons'], 
+            pnsr_reg=params['pnsr_reg'], 
+            image_type=utils.ImageType(params['image_type']), 
+            reward_type=utils.RewardType.FWD_RND_COMPLETE_FULL,
+            penalty=params['penalty'],
+            solver=params['solver'],
+            solver_iters=params['solver_iters'],
+            periodic=params['periodic'],
+            jitter=params['jitter'],
+            allow_repeats=params['allow_repeats'],
+            state_mode=params['state_mode'],
+            warm_start=params['warm_start'],
+            blind=params['blind'],
+        )
+    if isinstance(env.observation_space, gym.spaces.Dict):
+        env = gym.wrappers.FlattenObservation(env)
+    if isinstance(env.observation_space, gym.spaces.Box) and len(env.observation_space.shape) > 1:
+        env = gym.wrappers.FlattenObservation(env)
+
+    logger, image_and_action_logger = get_loggers(env, params, is_validation=True)
     s_time = time.time()
 
     for e in range(n_validations):

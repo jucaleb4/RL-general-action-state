@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
     if args.setup:
         # TODO: Do we need to change this?
-        seed = 0
+        seed = 1029
         max_steps = 100_000
         if args.mode == "validate":
             max_trials = 1
